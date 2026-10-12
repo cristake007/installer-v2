@@ -1,6 +1,6 @@
 # Installer execution rules
 
-This repository installs Docker infrastructure only: official PHP-FPM 8.4, PostgreSQL 18, Redis and optional Nginx. No application repository or image is required. Keep installation and administration straightforward.
+This repository installs Docker infrastructure only: official PHP-FPM 8.4, PostgreSQL 18, Redis and optional Nginx. No application repository or image is required. Keep installation and administration straightforward. The interactive flow is inspired by EspoCRM; single-file distribution, configurable backups, fresh-server restoration, PostgreSQL SQL transfer and container-managed HTTPS/renewal are in scope.
 
 - Support Ubuntu LTS and Debian stable; optional official Docker installation needs explicit authorization. Never install/change host web servers or firewall rules.
 - Preserve data, settings and credentials on rerun. Reject unexpected directories and unsupported old installation formats without modifying them.
@@ -12,4 +12,4 @@ This repository installs Docker infrastructure only: official PHP-FPM 8.4, Postg
 - CI has exactly two jobs: syntax/essential units and real Docker smoke tests. No private test registry, simulated application images or mandatory VM runners.
 - Record actual test evidence and limits honestly; successful container tests do not prove clean-host Docker bootstrap or production readiness.
 
-The previous application-specific architecture and its tests were explicitly removed at the user's request. Git history retains their evidence.
+Application-specific deployment logic and tests remain excluded. Certificate renewal must run inside the installation's containers, not alter host cron or host web servers. ACME tests must validate actual HTTP-01 challenges; never bypass CA validation or claim public DNS readiness from a local test CA. Git history retains previous evidence.

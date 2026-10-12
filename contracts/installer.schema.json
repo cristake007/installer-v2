@@ -1,21 +1,85 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["version", "scope", "supported_hosts", "services", "runtime", "default_path", "application_deployment", "commands", "safety", "backup", "updates", "ci_jobs", "production_ready"],
+  "required": [
+    "version",
+    "scope",
+    "supported_hosts",
+    "services",
+    "runtime",
+    "default_path",
+    "application_deployment",
+    "commands",
+    "safety",
+    "backup",
+    "updates",
+    "ci_jobs",
+    "production_ready"
+  ],
   "additionalProperties": false,
   "properties": {
-    "version": {"const": 1},
-    "scope": {"const": "Docker infrastructure only"},
-    "supported_hosts": {"type": "object"},
-    "services": {"const": ["php", "db", "redis", "nginx (optional)"]},
-    "runtime": {"type": "object"},
-    "default_path": {"const": "/opt/fluidweb"},
-    "application_deployment": {"const": false},
-    "commands": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-    "safety": {"type": "array", "items": {"type": "string"}},
-    "backup": {"type": "string"},
-    "updates": {"type": "string"},
-    "ci_jobs": {"const": ["syntax and essential unit checks", "real Docker smoke tests"]},
-    "production_ready": {"const": false}
+    "version": {
+      "const": 1
+    },
+    "scope": {
+      "const": "Docker infrastructure only"
+    },
+    "supported_hosts": {
+      "type": "object"
+    },
+    "services": {
+      "const": [
+        "php",
+        "db",
+        "redis",
+        "nginx (optional)"
+      ]
+    },
+    "runtime": {
+      "type": "object"
+    },
+    "default_path": {
+      "const": "/opt/fluidweb"
+    },
+    "application_deployment": {
+      "const": false
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "safety": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "backup": {
+      "type": "string"
+    },
+    "updates": {
+      "type": "string"
+    },
+    "ci_jobs": {
+      "const": [
+        "syntax and essential unit checks",
+        "real Docker smoke tests"
+      ]
+    },
+    "production_ready": {
+      "const": false
+    },
+    "web": {
+      "type": "array"
+    },
+    "distribution": {
+      "type": "string"
+    },
+    "administration": {
+      "type": "string"
+    }
   }
 }

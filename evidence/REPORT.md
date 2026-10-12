@@ -1,3 +1,13 @@
+# Current implementation evidence
+
+The current revision adds a standalone interactive installer, an administration menu, configurable HTTP/HTTPS, certificate issuance and renewal, SQL operations, configuration application, tooling updates and fresh-path restoration to the basic PHP-FPM 8.4/PostgreSQL 18/Redis/Nginx stack. No application repository is required.
+
+Before publication was requested, twelve essential unit tests passed, Bash syntax and Python compilation passed, and the JSON contract validated against its schema. The focused real Docker suite passed actual ACME HTTP-01 issuance and forced renewal, renewal-container management, certificate backup/restoration, real terminal installation and administration, and isolation from all pre-existing containers on the shared Debian 13 host.
+
+The subsequent complete combined Docker run was interrupted at the operator’s explicit request to publish without running further tests. It is not reported as passing. No CI result is claimed for this revision; publication uses a skip-CI commit message in accordance with that request. Optional Docker installation on a clean host and public Let’s Encrypt/DNS provisioning remain unverified. This is not a production-readiness claim.
+
+## Historical evidence for the previously published simplified revision
+
 # Simplified infrastructure installer evidence
 
 Scope was explicitly reduced by the operator: PHP-FPM 8.4, PostgreSQL 18, Redis and optional Nginx only. Application image contracts, assets/deployment logic, migration/compatibility hooks, test registries, simulated application images, journals, TLS automation and VM workflows were removed intentionally. Previous results remain in Git history and are not evidence for this implementation.

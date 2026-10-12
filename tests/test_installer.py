@@ -1,4 +1,9 @@
 import json
+import base64
+import gzip
+import re
+import subprocess
+import io
 import os
 from pathlib import Path
 import socket
@@ -72,6 +77,50 @@ class EssentialTests(unittest.TestCase):
                 with self.assertRaises(i.InstallError):a.update(p,cfg,'php','php:8.4-fpm-alpine')
                 restore.assert_called_once_with(p,p/'saved',cfg,take_safety=False)
                 self.assertEqual(cfg['images']['php'],'php@sha256:'+'a'*64)
+
+    def test_standalone_payload_matches_repository(self):
+        root=Path(__file__).resolve().parents[1]
+        packed=re.search(r'payload="([A-Za-z0-9+/=]+)"',(root/'install.sh').read_text()).group(1)
+        files=json.loads(gzip.decompress(base64.b64decode(packed)))
+        expected={'command.sh',*[str(p.relative_to(root)) for p in (root/'src').glob('*.py')],*[str(p.relative_to(root)) for p in (root/'examples').glob('*.example')]}
+        self.assertEqual(set(files),expected)
+        for name,content in files.items():self.assertEqual(content,(root/name).read_text(),name)
+        with tempfile.TemporaryDirectory() as tmp:
+            script=Path(tmp)/'install.sh';script.write_text((root/'install.sh').read_text())
+            result=subprocess.run(['bash',str(script),'--help'],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('--restore',result.stdout)
+
+    def test_domain_and_tls_validation(self):
+        import web
+        for value in ('evil;rm -rf /','a\nserver{}','../a','-example.com','a..test'):
+            with self.assertRaises(i.InstallError):web.domain(value)
+        self.assertEqual(web.domain('Example.COM'),'example.com')
+        with self.assertRaises(i.InstallError):web.domain('127.0.0.1',True)
+        cfg={'web_mode':'nginx','tls_mode':'letsencrypt','domain':'example.com','email':'user@example.com','http_port':8080,'https_port':443}
+        with self.assertRaises(i.InstallError):web.validate(cfg)
+        cfg['http_port']=80;web.validate(cfg)
+        cfg['web_mode']='external'
+        with self.assertRaises(i.InstallError):web.validate(cfg)
+
+    def test_wizard_and_independent_approval(self):
+        from argparse import Namespace
+        args=Namespace(install_dir='/opt/test',web_mode=None)
+        with patch('builtins.input',side_effect=['','1','example.com','1','8080','y']),patch.object(i,'docker_available',return_value=True),patch('sys.stdout',new=io.StringIO()):i.wizard(args)
+        self.assertEqual(args.web_mode,'nginx');self.assertEqual(args.http_port,8080)
+        self.assertEqual(args.domain,'example.com')
+        with patch('sys.stdin.isatty',return_value=False):
+            with self.assertRaises(i.InstallError):a.approval(Namespace(confirm=None),'our_project')
+        a.approval(Namespace(confirm='our_project'),'our_project')
+
+    def test_only_lets_encrypt_internal_links_are_allowed(self):
+        import tarfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            with tarfile.open(path/'stack.tar','w') as archive:
+                item=tarfile.TarInfo('config/letsencrypt/live/example/key.pem');item.type=tarfile.SYMTYPE;item.linkname='../../../../../etc/shadow';archive.addfile(item)
+            (path/'manifest.json').write_text(json.dumps({'format':'stack-backup-v1','project':'ours','sha256':a.digest(path/'stack.tar')}))
+            with self.assertRaises(i.InstallError):a.verify(path,'ours')
 
     def test_contract(self):
         root=Path(__file__).resolve().parents[1]

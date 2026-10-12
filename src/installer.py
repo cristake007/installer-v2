@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 SUPPORTED = {'ubuntu': {'22.04', '24.04'}, 'debian': {'12', '13'}}
 DEFAULT_IMAGES = {'php': 'php:8.4-fpm-alpine', 'postgres': 'postgres:18-alpine', 'redis': 'redis:8-alpine', 'nginx': 'nginx:1.28-alpine'}
 REPO = Path(__file__).resolve().parents[1]
@@ -212,9 +212,14 @@ def compose_environment(path: Path) -> dict:
     return env
 
 
+def compose_command(path: Path, *args: str) -> list[str]:
+    return docker_command('compose','--project-name',project_name(path),'--project-directory',str(path),
+                          '--env-file',str(path/'.env'),'-f',str(path/'compose.yaml'),*args)
+
+
 def compose(path: Path, *args: str, timeout: int = 300) -> str:
-    return run(['docker', 'compose', '--project-name', project_name(path), '--project-directory', str(path), '--env-file', str(path / '.env'),
-                '-f', str(path / 'compose.yaml'), *args], timeout=timeout, env=compose_environment(path))
+    # run() adds the local socket; remove that prefix from the shared command first.
+    return run(['docker',*compose_command(path,*args)[3:]],timeout=timeout,env=compose_environment(path))
 
 
 def operation_lock(path: Path):
@@ -257,6 +262,8 @@ def render_compose(cfg):
     php = service('php')
     php.update(volumes=['./data/public:/var/www/html/public'], networks=['frontend','backend'],
                healthcheck=health(['CMD','php','-r','exit(is_resource(fsockopen("127.0.0.1",9000)) ? 0 : 1);']))
+    if cfg.get('config_files'):
+        php['volumes'] += ['./config/php.ini:/usr/local/etc/php/conf.d/zz-installer.ini:ro','./config/php-fpm.conf:/usr/local/etc/php-fpm.d/zz-installer.conf:ro']
     if cfg['web_mode'] == 'external':
         php['ports'] = [f"127.0.0.1:{cfg['fpm_port']}:9000"]
     db = service('postgres')
@@ -272,21 +279,38 @@ def render_compose(cfg):
         nginx.update(ports=[f"{cfg['http_bind']}:{cfg['http_port']}:80"],
                      volumes=['./data/public:/var/www/html/public:ro','./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro'],
                      networks=['frontend'], depends_on={'php':{'condition':'service_healthy'}})
+        if cfg.get('tls_mode','http')!='http':
+            nginx['ports'].append(f"{cfg['http_bind']}:{cfg['https_port']}:443")
+            if cfg['tls_mode']=='own':nginx['volumes'].append('./config/tls:/etc/nginx/tls:ro')
+        if cfg.get('tls_mode')=='letsencrypt':
+            nginx['volumes'] += ['./config/letsencrypt:/etc/letsencrypt:ro','./config/acme:/var/www/certbot:ro']
+            if cfg.get('auto_renew'):
+                nginx['command']=['/bin/sh','-c',"while sleep 3600; do nginx -t && nginx -s reload; done & exec nginx -g 'daemon off;'"]
+                certbot={'image':cfg['certbot_image'],'restart':'unless-stopped','entrypoint':['/bin/sh','/renew.sh'],
+                         'network_mode':'host','volumes':['./config/letsencrypt:/etc/letsencrypt','./config/acme:/var/www/certbot','./config/renew.sh:/renew.sh:ro']}
+                if cfg.get('acme_ca'):
+                    certbot['volumes'].append('./config/acme-ca.pem:/acme-ca.pem:ro')
+                    certbot['environment']={'REQUESTS_CA_BUNDLE':'/acme-ca.pem'}
+                services['certbot']=certbot
         services['nginx'] = nginx
     return json.dumps({'services':services,'networks':{'frontend':{},'backend':{'internal':True}}},indent=2)+'\n'
 
 
 def load(path):
     validate_install_dir(str(path))
-    for name in ('settings.json','.env','compose.yaml','config','data','data/public','data/postgres','data/redis','backups','src'):
+    for name in ('settings.json','.env','compose.yaml','config','data','data/public','data/postgres','data/redis','backups','src','command.sh','config/nginx.conf'):
         if (path/name).is_symlink() or not (path/name).exists():
             raise InstallError('Missing or unsafe installation path: '+name)
+        if name in ('settings.json','.env','compose.yaml','command.sh','config/nginx.conf') and not (path/name).is_file():
+            raise InstallError('Expected installation file: '+name)
     cfg = json.loads((path/'settings.json').read_text())
     if cfg.get('format') != 'infrastructure-v1' or cfg.get('project') != project_name(path):
         raise InstallError('Unknown installation format. Existing application installers need a separate manual migration; nothing was changed.')
     if cfg.get('web_mode') not in ('nginx','external'):
         raise InstallError('Invalid web-server mode')
     validate_images(cfg['images'])
+    import web
+    web.validate(cfg)
     for key in ('http_port','fpm_port'): validate_port(cfg[key])
     import ipaddress
     ipaddress.IPv4Address(cfg['http_bind'])
@@ -299,12 +323,17 @@ def load(path):
     return cfg
 
 
-def validate_runtime(path, cfg):
+def validate_data(path):
     compose(path,'exec','-T','db','pg_isready','-U','fluidweb','-d','fluidweb')
     if compose(path,'exec','-T','redis','redis-cli','ping') != 'PONG':
         raise InstallError('Redis health failed')
+
+
+def validate_runtime(path, cfg):
+    validate_data(path)
     if compose(path,'exec','-T','php','php','-r','echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;') != '8.4':
         raise InstallError('PHP 8.4 required')
+    last=''
     for _ in range(15):
         try:
             if cfg['web_mode']=='external':
@@ -316,92 +345,171 @@ def validate_runtime(path, cfg):
                 opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
                 with opener.open(f'http://{host}:{cfg["http_port"]}/health',timeout=3) as response:
                     if response.read().strip()!=b'PHP 8.4 OK': raise OSError('Unexpected PHP health response')
+            if cfg.get('tls_mode','http')!='http':
+                import web
+                web.https_health(path,cfg)
             return
-        except OSError:
-            time.sleep(1)
-    raise InstallError('PHP-FPM HTTP/FastCGI health failed; check command.sh logs')
+        except OSError as exc:
+            last=str(exc);time.sleep(1)
+    raise InstallError('PHP-FPM/web health failed: '+last+'; check command.sh logs')
+
+
+def refresh_tools(path):
+    for name in ('installer.py','admin.py','fastcgi.py','web.py'):
+        source=REPO/'src'/name;target=path/'src'/name
+        if target.is_symlink():raise InstallError('Unsafe installer script path')
+        if source.resolve()!=target.resolve():shutil.copyfile(source,target);os.chmod(target,0o600)
+    if (path/'command.sh').is_symlink():raise InstallError('Unsafe administration script path')
+    if (REPO/'command.sh').resolve()!=(path/'command.sh').resolve():
+        shutil.copyfile(REPO/'command.sh',path/'command.sh');os.chmod(path/'command.sh',0o750)
 
 
 def install(args):
+    import web
     validate_host()
-    if os.geteuid()!=0: raise InstallError('Run the installer with sudo/root')
+    if os.geteuid()!=0:raise InstallError('Run the installer with sudo/root')
     path=validate_install_dir(args.install_dir)
-    if not path.is_relative_to('/opt') or path == Path('/opt'):
-        raise InstallError('Choose an installation directory under /opt/')
-    if not path.parent.is_dir(): raise InstallError('Create the installation parent directory first')
-    if not docker_available():
-        if args.install_docker: install_docker(*read_os_release())
-        else: raise InstallError('Docker Engine 24+ and Compose 2.20+ must be operational. Use --install-docker for optional installation.')
-    if args.preflight:
-        print('Supported host and Docker prerequisites passed'); return
+    if not path.is_relative_to('/opt') or path==Path('/opt'):raise InstallError('Choose an installation directory under /opt/')
+    if not path.parent.is_dir():raise InstallError('Create the installation parent directory first')
     with operation_lock(path) as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if args.command:
+            load(path);refresh_tools(path);print('Administration scripts updated; settings and services unchanged');return
+        if not docker_available():
+            if args.install_docker:install_docker(*read_os_release())
+            else:raise InstallError('Docker Engine 24+ and Compose 2.20+ must be operational. Use --install-docker.')
+        if args.preflight:
+            print('Supported host and Docker prerequisites passed');return
+        if args.restore:
+            import admin
+            admin.restore_new(path,Path(args.restore).resolve(),args);return
         if path.exists():
             cfg=load(path)
+            if args.tls_mode or args.domain:
+                proposed=dict(cfg)
+                for key in ('domain','tls_mode','email','http_port','https_port'):
+                    value=getattr(args,key)
+                    if value is not None:proposed[key]=value
+                if proposed.get('tls_mode')=='letsencrypt':proposed['auto_renew']=not args.no_auto_renew
+                web.apply(path,proposed,args.tls_cert,args.tls_key);cfg=proposed
         else:
             import ipaddress
-            ipaddress.IPv4Address(args.http_bind)
-            validate_port(args.http_port); validate_port(args.fpm_port)
-            port=args.http_port if args.web_mode=='nginx' else args.fpm_port
-            host=args.http_bind if args.web_mode=='nginx' else '127.0.0.1'
-            if not is_port_free(port,host): raise InstallError(f'Port {host}:{port} is occupied; choose another port')
-            if shutil.disk_usage(path.parent).free < 1024**3: raise InstallError('At least 1 GiB free disk required')
-            images={k:image_digest(v) for k,v in DEFAULT_IMAGES.items()}
+            ipaddress.IPv4Address(args.http_bind or '0.0.0.0')
             cfg={'format':'infrastructure-v1','project':project_name(path),'web_mode':args.web_mode,
-                 'http_bind':args.http_bind,'http_port':args.http_port,'fpm_port':args.fpm_port,'images':images}
+                 'http_bind':args.http_bind or '0.0.0.0','http_port':args.http_port or 80,'fpm_port':args.fpm_port or 9080,
+                 'domain':args.domain or 'localhost','tls_mode':args.tls_mode or 'http','https_port':args.https_port or 443,
+                 'email':args.email or '', 'config_files':True,'auto_renew':(args.tls_mode=='letsencrypt' and not args.no_auto_renew),
+                 'acme_server':args.acme_server,'acme_ca':bool(args.acme_ca)}
+            web.validate(cfg)
+            validate_port(cfg['http_port']);validate_port(cfg['fpm_port'])
+            ports=[cfg['http_port']] if cfg['web_mode']=='nginx' else [cfg['fpm_port']]
+            if cfg['tls_mode']!='http':ports.append(cfg['https_port'])
+            for port in ports:
+                host=cfg['http_bind'] if cfg['web_mode']=='nginx' else '127.0.0.1'
+                if not is_port_free(port,host):raise InstallError(f'Port {host}:{port} is occupied; choose another port')
+            if cfg['tls_mode']=='own':
+                if not args.tls_cert or not args.tls_key:raise InstallError('Own HTTPS requires --tls-cert and --tls-key')
+                import ssl
+                ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(args.tls_cert,args.tls_key)
+            if shutil.disk_usage(path.parent).free<1024**3:raise InstallError('At least 1 GiB free disk required')
+            cfg['images']={k:image_digest(v) for k,v in DEFAULT_IMAGES.items()}
+            if cfg['tls_mode']=='letsencrypt':cfg['certbot_image']=image_digest(web.CERTBOT_IMAGE)
             path.mkdir(mode=0o755)
             for name in ('config','data','data/public','data/postgres','data/redis','backups','src'):
                 (path/name).mkdir(mode=0o755 if name in ('data','data/public') else 0o700)
+            web.initialize(path,cfg)
+            if args.acme_ca:protected_write(path/'config/acme-ca.pem',Path(args.acme_ca).read_text())
+            if cfg['tls_mode']=='own':web.use_own_certificate(path,cfg,args.tls_cert,args.tls_key)
             safe_json(path/'settings.json',cfg)
             protected_write(path/'.env','POSTGRES_PASSWORD='+secrets.token_hex(32)+'\n')
             protected_write(path/'compose.yaml',render_compose(cfg))
-            protected_write(path/'config/nginx.conf',NGINX_CONFIG,0o644)
+            protected_write(path/'config/nginx.conf',web.nginx(cfg,tls=cfg['tls_mode']=='own'),0o644)
             endpoint='<?php header("Content-Type: text/plain"); echo "PHP ".PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION." OK\\n";\n'
-            for name in ('health.php','index.php'): protected_write(path/'data/public'/name,endpoint,0o644)
+            for name in ('health.php','index.php'):protected_write(path/'data/public'/name,endpoint,0o644)
             for service,user,directory in (('php','www-data','public'),('postgres','postgres','postgres'),('redis','redis','redis')):
-                uid=int(run(['docker','run','--rm','--network','none','--entrypoint','id',images[service],'-u',user]))
-                gid=int(run(['docker','run','--rm','--network','none','--entrypoint','id',images[service],'-g',user]))
+                uid=int(run(['docker','run','--rm','--network','none','--entrypoint','id',cfg['images'][service],'-u',user]))
+                gid=int(run(['docker','run','--rm','--network','none','--entrypoint','id',cfg['images'][service],'-g',user]))
                 os.chown(path/'data'/directory,uid,gid)
             for name in ('nginx.conf.example','apache.conf.example'):
-                protected_write(path/'config'/name,(REPO/'examples'/name).read_text().replace('/opt/fluidweb',str(path)).replace(':9080',':'+str(cfg['fpm_port'])),0o644)
-        # Refresh installer tooling only; saved credentials, settings and data stay intact.
-        for name in ('installer.py','admin.py','fastcgi.py'):
-            source=REPO/'src'/name; target=path/'src'/name
-            if target.is_symlink(): raise InstallError('Unsafe installer script path')
-            if source.resolve()!=target.resolve(): shutil.copyfile(source,target); os.chmod(target,0o600)
-        if (REPO/'command.sh').resolve()!=(path/'command.sh').resolve():
-            shutil.copyfile(REPO/'command.sh',path/'command.sh'); os.chmod(path/'command.sh',0o750)
+                protected_write(path/'config'/name,(REPO/'examples'/name).read_text().replace('/opt/fluidweb',str(path)).replace(':9080',':'+str(cfg['fpm_port'])).replace('example.com',cfg.get('domain','example.com')),0o644)
+        refresh_tools(path)
         compose(path,'up','-d','--wait','--wait-timeout','120')
+        if cfg.get('tls_mode')=='letsencrypt':
+            cert,key=web.certificate_paths(path,cfg)
+            pending=not cert.exists() or not key.exists() or 'ssl_certificate ' not in (path/'config/nginx.conf').read_text()
+            if pending:
+                if not cert.exists() or not key.exists():web.generate(path,cfg)
+                import admin
+                admin.atomic(path/'config/nginx.conf',web.nginx(cfg))
+                compose(path,'up','-d','--wait','--force-recreate');compose(path,'exec','-T','nginx','nginx','-t')
         validate_runtime(path,cfg)
+        if cfg.get('config_files'):web.save_good(path)
+        protocol='https' if cfg.get('tls_mode','http')!='http' else 'http'
+        port=cfg.get('https_port',443) if protocol=='https' else cfg['http_port']
         print(f'Infrastructure healthy at {path}. Credentials: {path}/.env (private).')
-        if cfg['web_mode']=='external': print('Configure your own web server using config/*.example; only loopback FastCGI was verified.')
+        if cfg['web_mode']=='external':print('Configure your own web server using config/*.example; loopback FastCGI verified.')
+        else:print(f'URL: {protocol}://{cfg.get("domain","localhost")}:{port}')
+        print(f'Administration: sudo {path}/command.sh')
+
+
+def ask(prompt,default=''):
+    answer=input(prompt+(f' [{default}]' if default else '')+': ').strip()
+    return answer or default
+
+
+def wizard(args):
+    args.install_dir=ask('Installation directory',args.install_dir)
+    args.web_mode={'1':'nginx','2':'external'}.get(ask('Web server: 1=Nginx container, 2=external','1'))
+    if not args.web_mode:raise InstallError('Choose 1 or 2')
+    args.domain=ask('Domain or IP','localhost')
+    if args.web_mode=='nginx':
+        mode=ask('Connection: 1=HTTP, 2=Let\'s Encrypt HTTPS, 3=own certificate','1')
+        if mode not in ('1','2','3'):raise InstallError('Choose 1, 2 or 3')
+        args.tls_mode={'1':'http','2':'letsencrypt','3':'own'}[mode]
+        args.http_port=int(ask('HTTP port','80'))
+        if args.tls_mode!='http':args.https_port=int(ask('HTTPS port','443'))
+        if args.tls_mode=='letsencrypt':
+            args.email=ask('Email for Let\'s Encrypt')
+            print('The domain must point to this server and public port 80 must reach this Nginx container.')
+        if args.tls_mode=='own':args.tls_cert=ask('Certificate PEM path');args.tls_key=ask('Private key PEM path')
+    else:args.fpm_port=int(ask('Loopback FastCGI port','9080'))
+    if not docker_available():args.install_docker=ask('Install Docker from the official repository? y/N','N').lower()=='y'
+    print(f'Stack: PHP 8.4-FPM, PostgreSQL 18, Redis; web={args.web_mode}; directory={args.install_dir}')
+    if ask('Continue? y/N','N').lower()!='y':raise InstallError('Installation cancelled')
 
 
 def main(argv=None):
+    import web
     parser=argparse.ArgumentParser(description='Install PHP 8.4-FPM, PostgreSQL 18, Redis and optional Nginx')
     parser.add_argument('--install-dir',default='/opt/fluidweb')
     parser.add_argument('--web-mode',choices=('nginx','external'))
-    parser.add_argument('--http-bind',default='0.0.0.0')
-    parser.add_argument('--http-port',type=int,default=80)
-    parser.add_argument('--fpm-port',type=int,default=9080)
+    parser.add_argument('--domain')
+    parser.add_argument('--tls-mode',choices=('http','own','letsencrypt'))
+    parser.add_argument('--ssl',action='store_true',help="Select HTTPS (Let's Encrypt by default)")
+    parser.add_argument('--letsencrypt',action='store_true')
+    parser.add_argument('--owncertificate',action='store_true')
+    parser.add_argument('--tls-cert');parser.add_argument('--tls-key');parser.add_argument('--email')
+    parser.add_argument('--http-bind')
+    parser.add_argument('--http-port',type=int);parser.add_argument('--https-port',type=int);parser.add_argument('--fpm-port',type=int)
     parser.add_argument('--install-docker',action='store_true')
-    parser.add_argument('--preflight',action='store_true')
+    parser.add_argument('--preflight','--environment',action='store_true')
+    parser.add_argument('--command',action='store_true',help='Update installed administration scripts only')
+    parser.add_argument('--restore',help='Restore a backup into a fresh installation directory')
+    parser.add_argument('-y','--yes',action='store_true',help='Skip first-install prompts; permit missing Docker installation')
+    parser.add_argument('--no-auto-renew',action='store_true')
+    parser.add_argument('--acme-server',default=web.ACME_SERVER,help='Advanced: alternative HTTPS ACME directory')
+    parser.add_argument('--acme-ca',help='Advanced: CA PEM for a private ACME server')
     args=parser.parse_args(argv)
-    if not args.web_mode:
-        if sys.stdin.isatty() and not args.preflight and not Path(args.install_dir).exists():
-            args.install_dir=input(f'Installation directory [{args.install_dir}]: ').strip() or args.install_dir
-            args.web_mode='external' if input('Web server: [1] Nginx container, [2] external (default 1): ').strip()=='2' else 'nginx'
-            key='http_port' if args.web_mode=='nginx' else 'fpm_port'
-            answer=input(f'Port [{getattr(args,key)}]: ').strip()
-            if answer:
-                try: setattr(args,key,int(answer))
-                except ValueError: parser.error('Port must be a number')
-            if not docker_available() and not args.install_docker:
-                args.install_docker=input('Install Docker from its official repository? [y/N]: ').strip().lower()=='y'
-        else: args.web_mode='nginx'
     try:
-        install(args); return 0
-    except (InstallError,OSError,ValueError,KeyError) as exc:
-        print('INSTALL ERROR: '+str(exc),file=sys.stderr); return 1
+        if args.owncertificate or args.tls_cert:args.tls_mode='own'
+        elif args.letsencrypt or args.ssl:args.tls_mode='letsencrypt'
+        if not args.web_mode and not args.preflight and not args.command and not args.restore and not Path(args.install_dir).exists() and sys.stdin.isatty() and not args.yes:wizard(args)
+        args.web_mode=args.web_mode or 'nginx'
+        if args.yes:args.install_docker=True
+        install(args);return 0
+    except (InstallError,OSError,ValueError,KeyError,EOFError) as exc:
+        print('INSTALL ERROR: '+str(exc),file=sys.stderr);return 1
 
-if __name__=='__main__': sys.exit(main())
+if __name__=='__main__':
+    sys.modules['installer']=sys.modules[__name__]
+    sys.exit(main())

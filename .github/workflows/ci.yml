@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: |
           bash -n install.sh command.sh tests/run-integration.sh
-          python3 -m compileall -q src tests
+          python3 -m compileall -q src tests tools
           python3 -m unittest discover -s tests -v
   smoke:
     name: Real Docker smoke tests
