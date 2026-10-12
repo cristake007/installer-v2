@@ -3,10 +3,22 @@
   "version": 1,
   "product": "FluidWeb",
   "scope": "standalone-installer",
-  "supported_os": {"ubuntu": ["22.04", "24.04"], "debian": ["12", "13"]},
+  "supported_os": {
+    "ubuntu": [
+      "22.04",
+      "24.04"
+    ],
+    "debian": [
+      "12",
+      "13"
+    ]
+  },
   "installer": {
     "default_path": "/opt/fluidweb",
-    "web_modes": ["nginx", "external"],
+    "web_modes": [
+      "nginx",
+      "external"
+    ],
     "default_web_mode": "nginx",
     "nginx_in_container": true,
     "modify_host_web_server": false,
@@ -40,5 +52,26 @@
     "upgrade-migration-rollback-test",
     "security-and-failure-injection-tests"
   ],
-  "production_ready": false
+  "production_ready": false,
+  "administration": {
+    "commands": [
+      "start",
+      "stop",
+      "restart",
+      "status",
+      "health",
+      "logs",
+      "version",
+      "backup",
+      "restore",
+      "upgrade",
+      "recover",
+      "renew-tls"
+    ],
+    "backup": "quiesced-files-and-transactional-pg-dump-with-sha256",
+    "destructive_confirmation": "exact-project-id",
+    "upgrade": "digest-pinned-compatibility-and-migration-hooks-with-data-recovery",
+    "interrupted_operation": "journal-and-explicit-recovery",
+    "https": "operator-supplied-certificate-and-explicit-reload"
+  }
 }

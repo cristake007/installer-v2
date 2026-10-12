@@ -1,4 +1,4 @@
-name: Installer CI (unit, schema and Compose)
+name: Installer CI (contracts, units and real Docker)
 on:
   push:
   pull_request:
@@ -19,7 +19,7 @@ jobs:
           python-version: '3.11'
       - name: Syntax and unit tests
         run: |
-          bash -n install.sh command.sh
+          bash -n install.sh command.sh tests/run-integration.sh tests/vm-acceptance.sh
           python -m compileall -q src tests
           python -m unittest discover -s tests -v
       - name: Contract schema
@@ -38,7 +38,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck install.sh command.sh
+          shellcheck install.sh command.sh tests/run-integration.sh tests/vm-acceptance.sh
   python-debian:
     name: "Unit tests / Debian ${{ matrix.version }} container"
     runs-on: ubuntu-24.04
@@ -52,7 +52,7 @@ jobs:
       - run: apt-get update && apt-get install -y git python3 bash ca-certificates
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s tests -v
-      - run: bash -n install.sh command.sh
+      - run: bash -n install.sh command.sh tests/run-integration.sh tests/vm-acceptance.sh
   compose-config:
     name: Compose rendering (not a live install)
     runs-on: ubuntu-24.04
@@ -74,3 +74,24 @@ jobs:
                   installer.compose(root,'config','--quiet')
                   print(mode,'Compose config passed')
           PY
+  real-docker:
+    name: Real Docker installation and recovery / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install, persist, backup, restore, migrate and recover with real services
+        run: |
+          mkdir -p evidence
+          set -o pipefail
+          sudo bash tests/run-integration.sh /opt/installer-v2-ci 2>&1 | tee evidence/docker-integration.log
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-docker-${{ matrix.os }}
+          path: evidence/

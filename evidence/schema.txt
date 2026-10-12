@@ -1,0 +1,2 @@
+PASS: installer contract validates against Draft 2020-12 schema.
+PASS: both workflow YAML files parse; this is not a CI or release qualification result.

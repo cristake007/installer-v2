@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "image": "immutable repository@sha256 digest",
+  "runtime": "PHP 8.4-FPM on TCP 9000, www-data account",
+  "public_directory": "/var/www/html/public",
+  "persistent_directories": ["/var/www/html/data", "/var/www/html/custom", "/var/www/html/var"],
+  "environment": ["APP_ENV", "APP_DEBUG", "APP_SECRET", "DATABASE_URL", "REDIS_URL"],
+  "required_hooks": {
+    "/opt/installer/health.php": "CLI exit 0 only when application, database and Redis operate; exit nonzero on failure",
+    "/var/www/html/public/health.php": "FastCGI HTTP 200 only when application operates; HTTP 503 on failure",
+    "/opt/installer/compatibility.php": "Receives previous image digest as argv[1]; exit 0 only when migration from it is supported. Runs without network or persistent data.",
+    "/opt/installer/migrate.php": "Idempotent initial/upgrade schema migration; exit nonzero on any failure. No background writers."
+  },
+  "upload_rule": "Use persistent directories; baked public assets are tracked and upgraded without overwriting untracked uploads.",
+  "fixture": "tests/fixture contains the complete self-contained reference implementation"
+}

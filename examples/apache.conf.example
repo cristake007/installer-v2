@@ -1,18 +1,28 @@
-# EXAMPLE ONLY: the installer never modifies or reloads the host Apache.
-# Required modules: proxy, proxy_fcgi, rewrite. Set DNS/TLS separately.
+# EXAMPLE ONLY: operator enables proxy, proxy_fcgi and rewrite; manages DNS/TLS.
 <VirtualHost *:80>
     ServerName example.com
     DocumentRoot /opt/fluidweb/data/public
     <Directory /opt/fluidweb/data/public>
         Require all granted
         AllowOverride None
-        Options -Indexes -MultiViews +FollowSymLinks
-        FallbackResource /index.php
+        Options -Indexes -MultiViews +SymLinksIfOwnerMatch
+        RewriteEngine On
+        RewriteRule ^health$ health.php [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteRule ^ index.php [L]
+        <FilesMatch "^(index|health)\.php$">
+            SetHandler "proxy:fcgi://127.0.0.1:9080"
+        </FilesMatch>
+        <FilesMatch "^(?!(index|health)\.php$).*\.php$">
+            Require all denied
+        </FilesMatch>
+        <FilesMatch "^\.">
+            Require all denied
+        </FilesMatch>
     </Directory>
-    <FilesMatch "^index\.php$">
-        SetHandler "proxy:fcgi://127.0.0.1:9080/var/www/html/public/"
-    </FilesMatch>
-    <FilesMatch "\.php$">
+    <LocationMatch "(^|/)\.">
         Require all denied
-    </FilesMatch>
+    </LocationMatch>
+    # Translate the host document root into the container's script path.
+    ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "/var/www/html/public%{reqenv:SCRIPT_NAME}"
 </VirtualHost>

@@ -34,6 +34,17 @@ class Tests(unittest.TestCase):
                 osr.write_text(f'ID={name}\nVERSION_ID={version}\n')
                 with self.assertRaises(i.InstallError): i.validate_host(osr)
 
+    def test_bootstrap_rejects_unrelated_runtime_before_changes(self):
+        with patch.object(i.shutil,'which',side_effect=lambda name: '/usr/bin/containerd' if name=='containerd' else None),\
+             patch.object(i,'run',side_effect=AssertionError('No host mutations permitted')):
+            with self.assertRaises(i.InstallError):i.install_docker('debian','13')
+
+    def test_docker_key_rejects_extra_or_unexpected_primary_keys(self):
+        valid='pub:-:4096:1:docker\nfpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:\n'
+        i.validate_docker_key(valid)
+        for text in (valid+'pub:-:4096:1:attacker\n',valid.replace('9DC858','AAAAAA'),''):
+            with self.assertRaises(i.InstallError):i.validate_docker_key(text)
+
     def test_directory_restrictions(self):
         for path in ('relative', '/', '/opt/../etc'):
             with self.assertRaises(i.InstallError): i.validate_install_dir(path)
@@ -85,22 +96,27 @@ class Tests(unittest.TestCase):
             self.assertIn('127.0.0.1:${FPM_PORT}:9000', text)
             self.assertNotIn('0.0.0.0:9000', text)
 
-    def test_rerun_does_not_touch_files_or_docker(self):
+    def test_rerun_preserves_files_and_verifies_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'site'
             a=args(path)
             cfg=i.settings(a, IMAGES)
             i.make_layout(path, cfg)
             i.safe_json(path/'installed.json', {'state':'ready'})
+            import admin
+            admin.seal(path)
             before={p.relative_to(path): (p.stat().st_mtime_ns,p.read_bytes())
                     for p in path.rglob('*') if p.is_file()}
             with patch.object(i,'validate_host'), patch.object(i,'check_disk'), patch.object(i.os,'geteuid',return_value=0),\
-                 patch.object(i,'docker_available',side_effect=AssertionError('Docker must not be touched')),\
-                 patch.object(i,'run',side_effect=AssertionError('No subprocess on rerun')):
+                 patch.object(i,'docker_available',return_value=True),\
+                 patch.object(i,'compose',return_value='running') as lifecycle,\
+                 patch.object(i,'validate_runtime') as health:
                 i.install(a)
             after={p.relative_to(path): (p.stat().st_mtime_ns,p.read_bytes())
                    for p in path.rglob('*') if p.is_file()}
             self.assertEqual(before,after)
+            lifecycle.assert_called_once_with(path, 'up', '-d', '--wait')
+            health.assert_called_once_with(path,cfg)
 
     def test_failed_runtime_preserves_unchanged_state_for_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,14 +124,15 @@ class Tests(unittest.TestCase):
             with patch.object(i,'validate_host'),patch.object(i,'check_disk'),patch.object(i.os,'geteuid',return_value=0),\
                  patch.object(i,'docker_available',return_value=True),patch.object(i,'is_port_free',return_value=True),\
                  patch.object(i,'image_digest',side_effect=lambda name: IMAGES['app'] if name == DIGEST else IMAGES[next(k for k,v in i.DEFAULT_IMAGES.items() if v==name)]),\
-                 patch.object(i,'compose',side_effect=i.InstallError('simulated failed startup')):
+                 patch.object(i,'compose',side_effect=i.InstallError('simulated failed startup')),\
+                 patch('admin.initialize_public'):
                 with self.assertRaises(i.InstallError): i.install(a)
             self.assertTrue((path/'.env').exists())
             self.assertFalse((path/'installed.json').exists())
             secrets_before=(path/'.env').read_bytes()
             with patch.object(i,'validate_host'),patch.object(i,'check_disk'),patch.object(i.os,'geteuid',return_value=0),\
                  patch.object(i,'docker_available',return_value=True),patch.object(i,'compose',return_value='running'),\
-                 patch.object(i,'validate_runtime',return_value=None):
+                 patch.object(i,'validate_runtime',return_value=None),patch('admin.initialize_public'):
                 i.install(a)
             self.assertEqual(secrets_before,(path/'.env').read_bytes())
             self.assertEqual(json.loads((path/'installed.json').read_text())['state'],'ready')

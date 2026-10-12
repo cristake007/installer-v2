@@ -1,0 +1,534 @@
+bf26e1ec36ed0a2b020c0601bf31bf9b5fd9a2f964a5408a8db6c0d0e6354606
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 617B 0.0s done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/php:8.4-fpm-alpine
+#2 DONE 0.9s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+#4 resolve docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 240B done
+#5 DONE 0.0s
+
+#6 [6/8] RUN echo "0" > /opt/installer/incompatible && echo "0" > /opt/installer/unhealthy
+#6 CACHED
+
+#7 [7/8] RUN echo "0" > /opt/installer/fail
+#7 CACHED
+
+#8 [3/8] COPY public/ /var/www/html/public/
+#8 CACHED
+
+#9 [2/8] RUN apk add --no-cache libpq && apk add --no-cache --virtual .build-deps autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c postgresql-dev && docker-php-ext-install pdo_pgsql && apk del .build-deps
+#9 CACHED
+
+#10 [4/8] COPY hooks/ /opt/installer/
+#10 CACHED
+
+#11 [5/8] RUN echo "1" > /var/www/html/public/version.txt
+#11 CACHED
+
+#12 [8/8] WORKDIR /var/www/html
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:dcd84cb76539b77b4e3b43da7f7c5c1040a42f1e60abd3cecf325d2f5c42bfb0 done
+#13 exporting config sha256:de7bd98b7641b34958328e8abe9c6c9832b8f1ea1cc1b029eba2c4baf352602f done
+#13 exporting attestation manifest sha256:9a58c8f9994d0161389ee513e60bd3eef70cb27f1d07f483a13588d5bafd1b6c 0.0s done
+#13 exporting manifest list sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1 0.0s done
+#13 naming to localhost:15001/installer-fixture:good done
+#13 unpacking to localhost:15001/installer-fixture:good 0.0s done
+#13 DONE 0.1s
+The push refers to repository [localhost:15001/installer-fixture]
+653dca025b8b: Pushed
+44136fa355b3: Pushed
+3130f89f3c63: Waiting
+b6e3bdfcc5a2: Waiting
+7cd7fa885de4: Waiting
+e2de96513ba9: Pushed
+42fbe5870b4f: Waiting
+0fe5efce3c6d: Waiting
+d5e9be8c4ce1: Pushed
+3130f89f3c63: Pushed
+b6e3bdfcc5a2: Pushed
+8bac20b495fc: Pushed
+c333772ac909: Waiting
+42fbe5870b4f: Pushed
+4f4fb700ef54: Waiting
+c333772ac909: Pushed
+7cd7fa885de4: Pushed
+0fe5efce3c6d: Pushed
+4f4fb700ef54: Pushed
+ffbfbdac1079: Pushed
+af6468d890a5: Waiting
+7868242c8c7c: Waiting
+99b724b4113e: Pushed
+05ad0918c9d4: Pushed
+e718846e1a36: Pushed
+0ebd220a6e80: Pushed
+af6468d890a5: Pushed
+7868242c8c7c: Pushed
+b41f65a5aac2: Pushed
+4f4fb700ef54: Pushed
+good: digest: sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1 size: 856
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 617B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/php:8.4-fpm-alpine
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+#4 resolve docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 240B done
+#5 DONE 0.0s
+
+#6 [5/8] RUN echo "1" > /var/www/html/public/version.txt
+#6 CACHED
+
+#7 [7/8] RUN echo "1" > /opt/installer/fail
+#7 CACHED
+
+#8 [6/8] RUN echo "0" > /opt/installer/incompatible && echo "0" > /opt/installer/unhealthy
+#8 CACHED
+
+#9 [3/8] COPY public/ /var/www/html/public/
+#9 CACHED
+
+#10 [4/8] COPY hooks/ /opt/installer/
+#10 CACHED
+
+#11 [2/8] RUN apk add --no-cache libpq && apk add --no-cache --virtual .build-deps autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c postgresql-dev && docker-php-ext-install pdo_pgsql && apk del .build-deps
+#11 CACHED
+
+#12 [8/8] WORKDIR /var/www/html
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:96fd3f3e8eb97d49aa0254a8fe545bc16be3ec66705dd2aeafa3829ea1aab744 done
+#13 exporting config sha256:8e2dbdbb11b324a21f2f335b77b7f43eb70f5cde5f3a7027bc8ecbbc8252d1e5 done
+#13 exporting attestation manifest sha256:15b485832ce4eeb95a570518e006e1f5c4d203bbebe69d722b8911ae6863ee39 0.0s done
+#13 exporting manifest list sha256:b1c37a34214dca7e61db5eb1788be0cf5dabf62065819a6391c0608d52612bbb
+#13 exporting manifest list sha256:b1c37a34214dca7e61db5eb1788be0cf5dabf62065819a6391c0608d52612bbb 0.0s done
+#13 naming to localhost:15001/installer-fixture:bad done
+#13 unpacking to localhost:15001/installer-fixture:bad done
+#13 DONE 0.1s
+The push refers to repository [localhost:15001/installer-fixture]
+d5e9be8c4ce1: Layer already exists
+44136fa355b3: Already exists
+3130f89f3c63: Layer already exists
+42fbe5870b4f: Layer already exists
+c333772ac909: Layer already exists
+6168f7de159f: Pushed
+0fe5efce3c6d: Layer already exists
+99b724b4113e: Layer already exists
+05ad0918c9d4: Layer already exists
+af6468d890a5: Layer already exists
+7868242c8c7c: Layer already exists
+e718846e1a36: Layer already exists
+e2de96513ba9: Layer already exists
+ffbfbdac1079: Layer already exists
+4f4fb700ef54: Layer already exists
+0ebd220a6e80: Layer already exists
+601fa8048fd2: Pushed
+b6e3bdfcc5a2: Layer already exists
+7cd7fa885de4: Layer already exists
+8bac20b495fc: Layer already exists
+bad: digest: sha256:b1c37a34214dca7e61db5eb1788be0cf5dabf62065819a6391c0608d52612bbb size: 856
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 617B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/php:8.4-fpm-alpine
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+#4 resolve docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 240B done
+#5 DONE 0.0s
+
+#6 [5/8] RUN echo "2" > /var/www/html/public/version.txt
+#6 CACHED
+
+#7 [2/8] RUN apk add --no-cache libpq && apk add --no-cache --virtual .build-deps autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c postgresql-dev && docker-php-ext-install pdo_pgsql && apk del .build-deps
+#7 CACHED
+
+#8 [7/8] RUN echo "0" > /opt/installer/fail
+#8 CACHED
+
+#9 [3/8] COPY public/ /var/www/html/public/
+#9 CACHED
+
+#10 [4/8] COPY hooks/ /opt/installer/
+#10 CACHED
+
+#11 [6/8] RUN echo "0" > /opt/installer/incompatible && echo "0" > /opt/installer/unhealthy
+#11 CACHED
+
+#12 [8/8] WORKDIR /var/www/html
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:6323c9feac5bd9928e76066b2e3a3e4c6292e4bb0e8fd9c6083d97b3fff07b51 done
+#13 exporting config sha256:2b511d100e681ae7b9445dbb7ac93accc86ccfed2875c08b97f16cfc71b271f3 done
+#13 exporting attestation manifest sha256:14e63818a1de507eba4e173daba2cb4cb2db086859b33357b9bf46810e52a725 0.0s done
+#13 exporting manifest list sha256:bd8d95d532bb7979ba0e04694cf5122df18d7773989905e69ad542ea31592820
+#13 exporting manifest list sha256:bd8d95d532bb7979ba0e04694cf5122df18d7773989905e69ad542ea31592820 done
+#13 naming to localhost:15001/installer-fixture:next done
+#13 unpacking to localhost:15001/installer-fixture:next done
+#13 DONE 0.1s
+The push refers to repository [localhost:15001/installer-fixture]
+7cd7fa885de4: Layer already exists
+8bac20b495fc: Layer already exists
+42fbe5870b4f: Layer already exists
+0fade4e03341: Pushed
+d5e9be8c4ce1: Layer already exists
+ffbfbdac1079: Layer already exists
+05ad0918c9d4: Layer already exists
+c333772ac909: Layer already exists
+99b724b4113e: Layer already exists
+e2de96513ba9: Layer already exists
+b6e3bdfcc5a2: Layer already exists
+0fe5efce3c6d: Layer already exists
+0ebd220a6e80: Layer already exists
+44136fa355b3: Already exists
+4f4fb700ef54: Layer already exists
+af6468d890a5: Layer already exists
+9f264d9dfcd3: Pushed
+3130f89f3c63: Layer already exists
+85567322ae55: Pushed
+39a4cd30d900: Pushed
+next: digest: sha256:bd8d95d532bb7979ba0e04694cf5122df18d7773989905e69ad542ea31592820 size: 856
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 617B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/php:8.4-fpm-alpine
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+#4 resolve docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 240B done
+#5 DONE 0.0s
+
+#6 [2/8] RUN apk add --no-cache libpq && apk add --no-cache --virtual .build-deps autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c postgresql-dev && docker-php-ext-install pdo_pgsql && apk del .build-deps
+#6 CACHED
+
+#7 [3/8] COPY public/ /var/www/html/public/
+#7 CACHED
+
+#8 [4/8] COPY hooks/ /opt/installer/
+#8 CACHED
+
+#9 [5/8] RUN echo "1" > /var/www/html/public/version.txt
+#9 CACHED
+
+#10 [7/8] RUN echo "0" > /opt/installer/fail
+#10 CACHED
+
+#11 [6/8] RUN echo "1" > /opt/installer/incompatible && echo "0" > /opt/installer/unhealthy
+#11 CACHED
+
+#12 [8/8] WORKDIR /var/www/html
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:b3a91c15c1fbe457cb2279bc3903727b0db6f2a182ac569ec3e1b66e2ed3784a done
+#13 exporting config sha256:a7fc225250b5976a58908dff5aa09ed42d2379dec4ebe1f41fa6cf9cf9586197 done
+#13 exporting attestation manifest sha256:9bf4742208d8814c1a946907ee084f8536e22d17bb9b5d36da4b470a39b0602c 0.0s done
+#13 exporting manifest list sha256:1de82f1c334b907cf7e199c38b167751d180290c58df2143b74edf034983aafd
+#13 exporting manifest list sha256:1de82f1c334b907cf7e199c38b167751d180290c58df2143b74edf034983aafd 0.0s done
+#13 naming to localhost:15001/installer-fixture:incompatible done
+#13 unpacking to localhost:15001/installer-fixture:incompatible done
+#13 DONE 0.1s
+The push refers to repository [localhost:15001/installer-fixture]
+ffbfbdac1079: Layer already exists
+c333772ac909: Layer already exists
+4f4fb700ef54: Layer already exists
+99b724b4113e: Layer already exists
+e2de96513ba9: Layer already exists
+3130f89f3c63: Layer already exists
+0fe5efce3c6d: Layer already exists
+05ad0918c9d4: Layer already exists
+af6468d890a5: Layer already exists
+7868242c8c7c: Layer already exists
+d5e9be8c4ce1: Layer already exists
+b6e3bdfcc5a2: Layer already exists
+8bac20b495fc: Layer already exists
+42fbe5870b4f: Layer already exists
+0ebd220a6e80: Layer already exists
+a99fa193133e: Pushed
+17f778ff6bc6: Pushed
+7cd7fa885de4: Layer already exists
+25e547900458: Pushed
+44136fa355b3: Already exists
+incompatible: digest: sha256:1de82f1c334b907cf7e199c38b167751d180290c58df2143b74edf034983aafd size: 856
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 617B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/php:8.4-fpm-alpine
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+#4 resolve docker.io/library/php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 240B done
+#5 DONE 0.0s
+
+#6 [5/8] RUN echo "1" > /var/www/html/public/version.txt
+#6 CACHED
+
+#7 [6/8] RUN echo "0" > /opt/installer/incompatible && echo "1" > /opt/installer/unhealthy
+#7 CACHED
+
+#8 [3/8] COPY public/ /var/www/html/public/
+#8 CACHED
+
+#9 [7/8] RUN echo "0" > /opt/installer/fail
+#9 CACHED
+
+#10 [2/8] RUN apk add --no-cache libpq && apk add --no-cache --virtual .build-deps autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c postgresql-dev && docker-php-ext-install pdo_pgsql && apk del .build-deps
+#10 CACHED
+
+#11 [4/8] COPY hooks/ /opt/installer/
+#11 CACHED
+
+#12 [8/8] WORKDIR /var/www/html
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers 0.0s done
+#13 exporting manifest sha256:515620aaac2940eeb83a8a52b00961f16bf4e88108d95e22d74ae2e273acf2fb done
+#13 exporting config sha256:60026c0eb78df47ea943c299cc513655755195ce06faef26065d5980f0910679 done
+#13 exporting attestation manifest sha256:f0b2a530955708826602fa1460d7e1fd8d6bc3aeb04275d660e06d06ed5fa1ad
+#13 exporting attestation manifest sha256:f0b2a530955708826602fa1460d7e1fd8d6bc3aeb04275d660e06d06ed5fa1ad 0.0s done
+#13 exporting manifest list sha256:b30827d904821adfbafecead2bdd2139953df7ce77aa1c96ed1ecd4cb44d9ad0 0.0s done
+#13 naming to localhost:15001/installer-fixture:unhealthy done
+#13 unpacking to localhost:15001/installer-fixture:unhealthy 0.0s done
+#13 DONE 0.1s
+The push refers to repository [localhost:15001/installer-fixture]
+44136fa355b3: Already exists
+e2de96513ba9: Layer already exists
+b6e3bdfcc5a2: Layer already exists
+0ebd220a6e80: Layer already exists
+7868242c8c7c: Layer already exists
+1a2815f6e895: Pushed
+6b5d5e58649e: Pushed
+3130f89f3c63: Layer already exists
+ffbfbdac1079: Layer already exists
+c333772ac909: Layer already exists
+99b724b4113e: Layer already exists
+d5e9be8c4ce1: Layer already exists
+7cd7fa885de4: Layer already exists
+8bac20b495fc: Layer already exists
+42fbe5870b4f: Layer already exists
+0fe5efce3c6d: Layer already exists
+4f4fb700ef54: Layer already exists
+05ad0918c9d4: Layer already exists
+af6468d890a5: Layer already exists
+7c42bec2c818: Pushed
+unhealthy: digest: sha256:b30827d904821adfbafecead2bdd2139953df7ce77aa1c96ed1ecd4cb44d9ad0 size: 856
+Resuming interrupted installation with preserved configuration and credentials.
+Interrupted install completed without replacing existing data.
+
+PASS: real killed installer resumes without replacing credentials
+PASS: port collision fails before installation
+localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1: Pulling from installer-fixture
+Digest: sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+Status: Image is up to date for localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+18-alpine: Pulling from library/postgres
+Digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+Status: Image is up to date for postgres:18-alpine
+docker.io/library/postgres:18-alpine
+8-alpine: Pulling from library/redis
+Digest: sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+Status: Image is up to date for redis:8-alpine
+docker.io/library/redis:8-alpine
+1.28-alpine: Pulling from library/nginx
+Digest: sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+Status: Image is up to date for nginx:1.28-alpine
+docker.io/library/nginx:1.28-alpine
+Installed at /opt/installer-v2-qualification/nginx. Mode=nginx. Project=fluidweb_35f229e459f0
+
+Existing installation recovered and health verified; configuration and data preserved.
+
+PASS: rerun preserves credentials
+PASS: status reports application
+PASS: version reports pinned image
+Resuming interrupted installation with preserved configuration and credentials.
+Interrupted install completed without replacing existing data.
+
+PASS: interrupted installation resumes
+PASS: database survives recreation
+PASS: files survive recreation
+PASS: Redis survives recreation
+PASS: HTTP PHP-FPM works
+PASS: HTTPS certificate and PHP health work
+PASS: TLS certificate reload works
+PASS: web server denies /forbidden.php on http://127.0.0.1:18081
+PASS: web server denies /.private/config on http://127.0.0.1:18081
+PASS: expected operation failure backup
+PASS: insufficient backup disk preserves database
+PASS: expected operation failure backup
+PASS: read-only backup filesystem preserves database
+PASS: expected operation failure upgrade
+PASS: incompatible upgrade rejected before mutation
+PASS: expected operation failure restore
+PASS: database backup restores
+PASS: file backup restores
+PASS: expected operation failure upgrade
+PASS: failed migration rollback restores data
+PASS: rollback removes migration-created schemas
+PASS: expected operation failure upgrade
+PASS: failed post-upgrade health restores database
+PASS: failed upgrade restores image
+PASS: successful upgrade replaces application assets
+PASS: successful migration upgrade
+PASS: expected operation failure health
+PASS: interrupted migration recovery
+PASS: interrupted restore recovers corrupt partial configuration
+PASS: expected operation failure health
+PASS: database outage recovery preserves data
+PASS: expected operation failure restore
+PASS: corrupt backup rejected without data loss
+PASS: database/Redis backend network is internal
+PASS: private db ports
+PASS: private redis ports
+PASS: port collision fails before installation
+localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1: Pulling from installer-fixture
+Digest: sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+Status: Image is up to date for localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+localhost:15001/installer-fixture@sha256:b0a13c31c758cc830ba0ecc93c1a80fab856633f3ff50575e61196dd6f79b5e1
+18-alpine: Pulling from library/postgres
+Digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+Status: Image is up to date for postgres:18-alpine
+docker.io/library/postgres:18-alpine
+8-alpine: Pulling from library/redis
+Digest: sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+Status: Image is up to date for redis:8-alpine
+docker.io/library/redis:8-alpine
+1.28-alpine: Pulling from library/nginx
+Digest: sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+Status: Image is up to date for nginx:1.28-alpine
+docker.io/library/nginx:1.28-alpine
+Installed at /opt/installer-v2-qualification/external. Mode=external. Project=fluidweb_e80663cd444f
+Configure the host web server manually; example vhosts: /opt/installer-v2-qualification/external/config/*.conf.example
+
+Existing installation recovered and health verified; configuration and data preserved.
+
+PASS: rerun preserves credentials
+PASS: status reports application
+PASS: version reports pinned image
+Resuming interrupted installation with preserved configuration and credentials.
+Interrupted install completed without replacing existing data.
+
+PASS: interrupted installation resumes
+PASS: database survives recreation
+PASS: files survive recreation
+PASS: Redis survives recreation
+PASS: external operator Nginx FastCGI vhost works
+2.4-alpine: Pulling from library/httpd
+Digest: sha256:3440c39d8d6f54fa9ad2549e5a60c19ddd435faadc29c1ad28aa795f71888889
+Status: Image is up to date for httpd:2.4-alpine
+docker.io/library/httpd:2.4-alpine
+PASS: external operator Apache FastCGI vhost works
+PASS: Apache health vhost works
+PASS: web server denies /forbidden.php on http://127.0.0.1:18082
+PASS: web server denies /.private/config on http://127.0.0.1:18082
+PASS: web server denies /forbidden.php on http://127.0.0.1:18083
+PASS: web server denies /.private/config on http://127.0.0.1:18083
+PASS: expected operation failure backup
+PASS: insufficient backup disk preserves database
+PASS: expected operation failure backup
+PASS: read-only backup filesystem preserves database
+PASS: expected operation failure upgrade
+PASS: incompatible upgrade rejected before mutation
+PASS: expected operation failure restore
+PASS: database backup restores
+PASS: file backup restores
+PASS: expected operation failure upgrade
+PASS: failed migration rollback restores data
+PASS: rollback removes migration-created schemas
+PASS: expected operation failure upgrade
+PASS: failed post-upgrade health restores database
+PASS: failed upgrade restores image
+PASS: successful upgrade replaces application assets
+PASS: successful migration upgrade
+PASS: expected operation failure health
+PASS: interrupted migration recovery
+PASS: interrupted restore recovers corrupt partial configuration
+PASS: expected operation failure health
+PASS: database outage recovery preserves data
+PASS: expected operation failure restore
+PASS: corrupt backup rejected without data loss
+PASS: database/Redis backend network is internal
+PASS: private db ports
+PASS: private redis ports
+PASS: FastCGI loopback only
+PASS: unrelated container unchanged installer-v2-registry-540736
+PASS: unrelated container unchanged installer-v2-test-registry
+PASS: unrelated container unchanged fluidweb_ac4c0ba74927-app-1
+PASS: unrelated container unchanged espocrm-test-daemon-1
+PASS: unrelated container unchanged espocrm-test-web-1
+PASS: unrelated container unchanged espocrm-test-gateway-1
+PASS: unrelated container unchanged espocrm-test-db-1
+PASS: unrelated container unchanged espocrm-test-mock-1
+PASS: unrelated container unchanged contextforge-gateway-1
+PASS: unrelated container unchanged contextforge-migration-1
+PASS: unrelated container unchanged contextforge-postgres-1
+PASS: unrelated container unchanged contextforge-redis-1
+ALL REAL DOCKER ACCEPTANCE CHECKS PASSED
+Test installation data retained at /opt/installer-v2-qualification
+PASS: nginx PHP account writes all application mounts; content survives recreation
+PASS: external PHP account writes all application mounts; content survives recreation
