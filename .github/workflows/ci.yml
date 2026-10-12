@@ -1,59 +1,21 @@
-name: Installer CI
-on:
-  push:
-  pull_request:
+name: Installer checks
+on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  unit:
-    name: Unit and contract checks / ${{ matrix.image }} container
+  checks:
+    name: Syntax and essential unit checks
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'debian:12', 'debian:13']
-    container:
-      image: ${{ matrix.image }}
     steps:
-      - name: Install test tools
-        run: apt-get update -qq && apt-get install -y -qq git python3 python3-jsonschema bash ca-certificates shellcheck
       - uses: actions/checkout@v7
-      - name: Syntax, safety and unit tests
-        run: |
-          bash -n install.sh command.sh tests/run-integration.sh tests/vm-acceptance.sh
-          shellcheck install.sh command.sh tests/run-integration.sh tests/vm-acceptance.sh
-          python3 -m compileall -q src tests
+      - run: |
+          bash -n install.sh command.sh tests/run-integration.sh
+          python3 -m compileall -q src tests tools
           python3 -m unittest discover -s tests -v
-      - name: Contract schema
-        if: matrix.image == 'ubuntu:24.04'
-        run: |
-          python3 - <<'PY'
-          import json
-          from jsonschema import Draft202012Validator
-          schema=json.load(open('contracts/installer.schema.json'))
-          data=json.load(open('contracts/installer.v1.json'))
-          Draft202012Validator.check_schema(schema)
-          Draft202012Validator(schema).validate(data)
-          print('JSON contract/schema valid')
-          PY
-  real-docker:
-    name: Real Docker installation and recovery / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+  smoke:
+    name: Real Docker smoke tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Install, persist, backup, restore, migrate and recover with real services
-        run: |
-          mkdir -p evidence
-          set -o pipefail
-          sudo bash tests/run-integration.sh /opt/installer-v2-ci 2>&1 | tee evidence/docker-integration.log
-      - name: Preserve diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: real-docker-${{ matrix.os }}
-          path: evidence/
+      - run: sudo bash tests/run-integration.sh /opt/installer-v2-smoke

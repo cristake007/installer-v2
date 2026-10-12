@@ -28,7 +28,7 @@ def probe(port):
                 status, protocol = struct.unpack('!IB3x',data)
                 if status or protocol: raise OSError('FastCGI application failed')
                 headers, separator, response=output.partition(b'\r\n\r\n')
-                if not separator or b'Status: 5' in headers or b'Status: 4' in headers or not response.strip():
+                if not separator or b'Status: 5' in headers or b'Status: 4' in headers or response.strip()!=b'PHP 8.4 OK':
                     raise OSError('FastCGI health endpoint failed')
                 return
         raise OSError('FastCGI response did not complete')

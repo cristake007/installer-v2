@@ -1,216 +1,236 @@
 #!/usr/bin/env python3
-"""Real Docker acceptance suite. Run as root on a disposable or shared supported host.
-Only this suite's projects and named auxiliary containers are removed; data retained.
-"""
-import argparse
+"""Real Docker smoke test. No image builds, test registry or application hooks."""
 import json
+import pty
+import select
+import time
 import os
 from pathlib import Path
-import socket
-import signal
 import shutil
-import ssl
+import socket
 import subprocess
 import sys
-import time
-import urllib.request
+import uuid
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 import installer as i
-import admin
+import admin as a
+
+root=Path(sys.argv[1] if len(sys.argv)>1 else '/opt/installer-v2-smoke')
+repo=Path(__file__).resolve().parents[1]
+
+def check(condition,message):
+    if not condition:raise AssertionError(message)
+
+def command(path,*args,ok=True):
+    result=subprocess.run([str(path/'command.sh'),*args],text=True,capture_output=True)
+    if ok and result.returncode:raise AssertionError(result.stdout+result.stderr)
+    if not ok:check(result.returncode!=0,'Expected rejection: '+str(args))
+    return result.stdout
+
+def install(path,mode,port,ok=True):
+    args=[str(standalone),'--install-dir',str(path),'--web-mode',mode,'--http-bind','127.0.0.1',
+          '--http-port' if mode=='nginx' else '--fpm-port',str(port)]
+    result=subprocess.run(args,text=True,capture_output=True)
+    print(result.stdout,end='')
+    if ok and result.returncode:raise AssertionError(result.stderr)
+    if not ok:check(result.returncode!=0,'Expected installer rejection')
+
+def free_port():
+    with socket.socket() as stream:
+        stream.bind(('0.0.0.0',0));return stream.getsockname()[1]
 
 
-def check(value, message):
-    if not value: raise AssertionError(message)
-    print('PASS:',message,flush=True)
-
-
-def cli(path,*args,ok=True):
-    result=subprocess.run([str(path/'command.sh'),*args],capture_output=True,text=True)
-    if ok and result.returncode: raise AssertionError(result.stdout+result.stderr)
-    if not ok: check(result.returncode!=0,'expected operation failure '+args[0])
-    return result.stdout.strip()
-
-
-def sql(path, query):
-    return i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-At','-v','ON_ERROR_STOP=1','-c',query)
-
-
-def install(path,image,mode,port):
-    flags=[]
-    if mode=='nginx':
-        flags=['--tls-cert',str(path.parent/'cert.pem'),'--tls-key',str(path.parent/'key.pem'),'--https-port','18443']
-    result=subprocess.run([str(i.REPO/'install.sh'),'--install-dir',str(path),'--web-mode',mode,'--http-bind','127.0.0.1','--http-port',str(port),'--fpm-port',str(port),'--app-image',image,*flags],capture_output=True,text=True)
-    if result.returncode: raise AssertionError(result.stdout+result.stderr)
-    print(result.stdout,flush=True)
-
-
-
-def web_security(path, urls):
-    (path/'data/public/forbidden.php').write_text('<?php echo "sensitive";')
-    (path/'data/public/.private').mkdir(exist_ok=True)
-    (path/'data/public/.private/config').write_text('sensitive')
-    for url in urls:
-        for endpoint in ('/forbidden.php','/.private/config'):
-            try:
-                urllib.request.urlopen(url+endpoint)
-            except urllib.error.HTTPError as exc:
-                check(exc.code in (403,404), 'web server denies '+endpoint+' on '+url)
-            else:
-                raise AssertionError('Sensitive endpoint exposed: '+url+endpoint)
-
-def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--image',required=True);parser.add_argument('--bad-image',required=True);parser.add_argument('--next-image',required=True);parser.add_argument('--incompatible-image',required=True);parser.add_argument('--unhealthy-image',required=True);parser.add_argument('--root',required=True);args=parser.parse_args()
-    root=Path(args.root);root.mkdir(mode=0o755,parents=True,exist_ok=False)
-    before=[json.loads(line) for line in i.run(['docker','ps','-a','--format','json']).splitlines()]
-    (root/'containers-before.json').write_text(json.dumps(before,indent=2))
-    i.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','2','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1','-keyout',str(root/'key.pem'),'-out',str(root/'cert.pem')])
-    projects=[]; auxiliary=[]
+def terminal(argv,answers):
+    master,slave=pty.openpty()
+    process=subprocess.Popen(argv,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
+    os.close(slave);os.write(master,answers.encode());output=b'';deadline=time.monotonic()+300
     try:
-        interrupted=root/'interrupted';projects.append(interrupted)
-        with (root/'interruption.log').open('w') as output:
-            process=subprocess.Popen([str(i.REPO/'install.sh'),'--install-dir',str(interrupted),'--web-mode','nginx','--http-bind','127.0.0.1','--http-port','18084','--app-image',args.image],stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
-            deadline=time.monotonic()+120
-            injected=False
-            while time.monotonic()<deadline and process.poll() is None:
-                if (interrupted/'integrity.json').exists():
-                    cid=i.compose(interrupted,'ps','--status','running','-q','db')
-                    if cid and not (interrupted/'installed.json').exists():
-                        os.killpg(process.pid,signal.SIGKILL);process.wait();injected=True;break
-                time.sleep(0.2)
-            if not injected:
-                if process.poll() is None: os.killpg(process.pid,signal.SIGKILL);process.wait()
-                raise AssertionError('Failed to inject real provisioning interruption')
-        secret=(interrupted/'.env').read_bytes()
-        install(interrupted,args.image,'nginx',18084)
-        check((interrupted/'.env').read_bytes()==secret,'real killed installer resumes without replacing credentials')
-        i.compose(interrupted,'down')
-        for mode, port in [('nginx',18081),('external',19081)]:
+        while time.monotonic()<deadline:
+            ready,_,_=select.select([master],[],[],1)
+            if ready:
+                try:output+=os.read(master,65536)
+                except OSError:break
+            if process.poll() is not None and not ready:break
+        else:process.kill();raise AssertionError('Interactive command timed out')
+    finally:os.close(master)
+    check(process.wait(timeout=10)==0,output.decode(errors='replace'))
+    return output.decode(errors='replace')
+
+
+def own_certificate(directory,name='localhost'):
+    directory.mkdir(mode=0o700,exist_ok=True)
+    cert=directory/'certificate.pem';key=directory/'key.pem'
+    subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','7','-subj','/CN='+name,
+                    '-addext','subjectAltName=DNS:'+name,'-keyout',str(key),'-out',str(cert)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    key.chmod(0o600);return cert,key
+
+
+def container_logs(name):
+    return subprocess.run(i.docker_command('logs','--tail','100',name),text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=True,env=i.docker_environment()).stdout
+
+
+def snapshot():
+    ids=i.run(['docker','ps','-aq']).split()
+    return {v['Id']:(v['State']['Status'],v['State']['StartedAt'],v['RestartCount']) for v in json.loads(i.run(['docker','inspect',*ids]))} if ids else {}
+
+root.mkdir(mode=0o700,exist_ok=False)
+# Copy only the entry script: prove that its embedded implementation is self-contained.
+standalone=root/'install.sh';shutil.copyfile(repo/'install.sh',standalone);standalone.chmod(0o755)
+# A sentinel complements the existing-host snapshot, proving scoped lifecycle operations.
+sentinel='installer-smoke-sentinel-'+uuid.uuid4().hex[:8]
+i.run(['docker','run','-d','--name',sentinel,'redis:8-alpine'])
+before=snapshot();paths=[];pebble=None
+try:
+    if '--web-only' not in sys.argv:
+        for mode in ('nginx','external'):
             path=root/mode
-            with socket.socket() as sock:
-                sock.bind(('0.0.0.0',port));sock.listen()
-                result=subprocess.run([str(i.REPO/'install.sh'),'--install-dir',str(path),'--web-mode',mode,'--http-port',str(port),'--fpm-port',str(port),'--app-image',args.image],capture_output=True)
-                check(result.returncode!=0 and not path.exists(),'port collision fails before installation')
-            projects.append(path)
-            install(path,args.image,mode,port)
-            cfg=admin.load(path); credentials=(path/'.env').read_bytes()
-            sql(path,'CREATE TABLE persistence (value text); INSERT INTO persistence VALUES (\'preserved\');')
-            (path/'data/storage/sentinel').write_text('preserved')
-            i.compose(path,'exec','-T','redis','redis-cli','SET','sentinel','preserved')
-            cli(path,'stop'); install(path,args.image,mode,port)
-            check((path/'.env').read_bytes()==credentials,'rerun preserves credentials')
-            cli(path,'health')
-            cli(path,'restart')
-            check('app' in cli(path,'status'),'status reports application')
-            check(json.loads(cli(path,'version'))['images']['app']==args.image,'version reports pinned image')
-            cli(path,'logs','app')
-            (path/'installed.json').unlink();install(path,args.image,mode,port)
-            check((path/'installed.json').exists(),'interrupted installation resumes')
-            i.compose(path,'up','-d','--wait','--force-recreate')
-            check(sql(path,'SELECT value FROM persistence')=='preserved','database survives recreation')
-            check((path/'data/storage/sentinel').read_text()=='preserved','files survive recreation')
-            check(i.compose(path,'exec','-T','redis','redis-cli','GET','sentinel')=='preserved','Redis survives recreation')
-            if mode=='nginx':
-                check(urllib.request.urlopen(f'http://127.0.0.1:{port}/').read()==b'installer fixture','HTTP PHP-FPM works')
-                context=ssl.create_default_context(cafile=str(root/'cert.pem'))
-                check(urllib.request.urlopen('https://127.0.0.1:18443/health',context=context).status==200,'HTTPS certificate and PHP health work')
-                cli(path,'renew-tls',str(root/'cert.pem'),str(root/'key.pem'))
-                check(urllib.request.urlopen('https://127.0.0.1:18443/health',context=context).status==200,'TLS certificate reload works')
-            else:
-                # Operator vhost exercised by an isolated container sharing host networking.
-                name='installer-v2-external-proxy-'+str(os.getpid());auxiliary.append(name)
-                conf=path/'config/operator-test.conf'
-                conf.write_text((path/'config/nginx.conf.example').read_text().replace('listen 80;', 'listen 18082;'))
-                i.run(['docker','run','-d','--name',name,'--network','host','-v',str(conf)+':/etc/nginx/conf.d/default.conf:ro','-v',str(path/'data/public')+':'+str(path/'data/public')+':ro',cfg['images']['nginx']])
-                time.sleep(2)
-                check(urllib.request.urlopen('http://127.0.0.1:18082/').read()==b'installer fixture','external operator Nginx FastCGI vhost works')
-                apache='installer-v2-external-apache-'+str(os.getpid());auxiliary.append(apache)
-                apache_image=i.image_digest('httpd:2.4-alpine')
-                default=i.run(['docker','run','--rm','--entrypoint','cat',apache_image,'/usr/local/apache2/conf/httpd.conf'])
-                default=default.replace('Listen 80','Listen 18083').replace('#LoadModule proxy_module','LoadModule proxy_module').replace('#LoadModule proxy_fcgi_module','LoadModule proxy_fcgi_module').replace('#LoadModule rewrite_module','LoadModule rewrite_module')
-                apache_conf=path/'config/apache-test.conf'
-                apache_conf.write_text(default+'\nServerName localhost\n'+(path/'config/apache.conf.example').read_text().replace('*:80','*:18083'))
-                i.run(['docker','run','-d','--name',apache,'--network','host','-v',str(apache_conf)+':/usr/local/apache2/conf/httpd.conf:ro','-v',str(path/'data/public')+':'+str(path/'data/public')+':ro',apache_image])
-                time.sleep(2)
-                check(urllib.request.urlopen('http://127.0.0.1:18083/').read()==b'installer fixture','external operator Apache FastCGI vhost works')
-                check(urllib.request.urlopen('http://127.0.0.1:18083/health').status==200,'Apache health vhost works')
-            web_security(path,[f'http://127.0.0.1:{port}'] if mode=='nginx' else ['http://127.0.0.1:18082','http://127.0.0.1:18083'])
-            i.run(['mount','-t','tmpfs','-o','size=32m','tmpfs',str(path/'backups')])
-            try:
-                cli(path,'backup',ok=False)
-                check(sql(path,'SELECT value FROM persistence')=='preserved','insufficient backup disk preserves database')
-                cli(path,'health')
-                i.run(['mount','-o','remount,ro,size=512m',str(path/'backups')])
-                cli(path,'backup',ok=False)
-                check(sql(path,'SELECT value FROM persistence')=='preserved','read-only backup filesystem preserves database')
-                cli(path,'health')
-            finally:
-                i.run(['umount',str(path/'backups')])
-            cli(path,'upgrade',args.incompatible_image,'--confirm',cfg['project'],ok=False)
-            check(not (path/'upgrade.json').exists() and sql(path,'SELECT value FROM persistence')=='preserved','incompatible upgrade rejected before mutation')
-            backup=Path(cli(path,'backup').splitlines()[-1]);admin.verify(backup)
-            sql(path,"UPDATE persistence SET value='changed'")
-            (path/'data/storage/sentinel').write_text('changed')
-            cli(path,'restore',str(backup),ok=False)
-            cli(path,'restore',str(backup),'--confirm',cfg['project'])
-            check(sql(path,'SELECT value FROM persistence')=='preserved','database backup restores')
-            check((path/'data/storage/sentinel').read_text()=='preserved','file backup restores')
-            cli(path,'upgrade',args.bad_image,'--confirm',cfg['project'],ok=False)
-            check(sql(path,'SELECT value FROM persistence')=='preserved','failed migration rollback restores data')
-            check(sql(path,"SELECT count(*) FROM pg_namespace WHERE nspname='failed_upgrade'")=='0','rollback removes migration-created schemas')
-            cli(path,'upgrade',args.unhealthy_image,'--confirm',cfg['project'],ok=False)
-            check(sql(path,'SELECT value FROM persistence')=='preserved','failed post-upgrade health restores database')
-            check(admin.load(path)['images']['app']==args.image,'failed upgrade restores image')
-            cli(path,'upgrade',args.next_image,'--confirm',cfg['project'])
-            check((path/'data/public/version.txt').read_text().strip()=='2','successful upgrade replaces application assets')
-            check(sql(path,"SELECT count(*) FROM migration_probe")=='0','successful migration upgrade')
-            # Simulate process death after migration by retaining a pre-upgrade backup journal.
-            saved=admin.backup(path,admin.load(path));i.safe_json(path/'upgrade.json',{'backup':str(saved)})
-            sql(path,'DELETE FROM persistence')
-            cli(path,'health',ok=False);cli(path,'recover','--confirm',cfg['project'])
-            check(sql(path,'SELECT value FROM persistence')=='preserved','interrupted migration recovery')
-            saved=admin.backup(path,admin.load(path));i.safe_json(path/'restore.json',{'backup':str(saved)})
-            sql(path,'DELETE FROM persistence');shutil.rmtree(path/'data/public');(path/'settings.json').write_text('{')
-            cli(path,'recover','--confirm',cfg['project'])
-            check(sql(path,'SELECT value FROM persistence')=='preserved','interrupted restore recovers corrupt partial configuration')
-            i.compose(path,'stop','db');cli(path,'health',ok=False);cli(path,'start')
-            check(sql(path,'SELECT value FROM persistence')=='preserved','database outage recovery preserves data')
-            corrupt=backup/'database.dump'; original=corrupt.read_bytes();corrupt.write_bytes(b'corrupted')
-            cli(path,'restore',str(backup),'--confirm',cfg['project'],ok=False);corrupt.write_bytes(original)
-            check(sql(path,'SELECT value FROM persistence')=='preserved','corrupt backup rejected without data loss')
-            ambient=dict(os.environ)
-            try:
-                os.environ.update({'COMPOSE_PROJECT_NAME':'installer-ambient-scope-test','APP_IMAGE':'injected:latest','POSTGRES_PASSWORD':'injected','APP_SECRET':'injected','HTTP_PORT':'19998','FPM_PORT':'19999','DOCKER_HOST':'unix:///tmp/installer-nonexistent.sock','DOCKER_CONTEXT':'nonexistent','COMPOSE_PROFILES':'unexpected'})
-                rendered=json.loads(i.compose(path,'config','--format','json'))
-                check(rendered['name']==cfg['project'] and rendered['services']['app']['image']==admin.load(path)['images']['app'],'ambient variables cannot change project or pinned image')
-                cli(path,'stop');install(path,args.image,mode,port);cli(path,'health')
-                saved=Path(cli(path,'backup').splitlines()[-1])
-                sql(path,"UPDATE persistence SET value='ambient-change'")
-                cli(path,'restore',str(saved),'--confirm',cfg['project'])
-                check(sql(path,'SELECT value FROM persistence')=='preserved','backup/restore ignores ambient credentials and Docker context')
-                cli(path,'upgrade',args.next_image,'--confirm',cfg['project'])
-                check(sql(path,'SELECT value FROM persistence')=='preserved','upgrade ignores ambient project/image/context overrides')
-            finally:
-                os.environ.clear();os.environ.update(ambient)
-            check(i.run(['docker','network','inspect',cfg['project']+'_backend','--format','{{.Internal}}'])=='true','database/Redis backend network is internal')
+            with socket.socket() as s:
+                s.bind(('127.0.0.1',0));port=s.getsockname()[1]
+            paths.append(path);install(path,mode,port)
+            cfg=i.load(path);secret=(path/'.env').read_bytes()
+            i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-c',"CREATE TABLE smoke(value text); INSERT INTO smoke VALUES ('preserved');")
+            i.compose(path,'exec','-T','redis','redis-cli','SET','smoke','preserved')
+            (path/'data/public/upload.txt').write_text('preserved')
+            install(path,mode,port);check((path/'.env').read_bytes()==secret,'Credentials changed')
+            command(path,'stop');install(path,mode,port)
+            i.compose(path,'up','-d','--force-recreate','--wait');command(path,'health')
+            check(i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','DB persistence')
+            check(i.compose(path,'exec','-T','redis','redis-cli','GET','smoke')=='preserved','Redis persistence')
+            check((path/'data/public/upload.txt').read_text()=='preserved','File persistence')
             for service in ('db','redis'):
                 cid=i.compose(path,'ps','-q',service)
-                check(i.run(['docker','inspect',cid,'--format','{{json .HostConfig.PortBindings}}']) in ('{}','null'),'private '+service+' ports')
-            if mode=='external':
-                cid=i.compose(path,'ps','-q','app')
-                check('127.0.0.1' in i.run(['docker','inspect',cid,'--format','{{json .HostConfig.PortBindings}}']),'FastCGI loopback only')
-        for container in before:
-            now=json.loads(i.run(['docker','inspect',container['ID']]))[0]
-            check(now['State']['Status']==container['State'],'unrelated container unchanged '+container['Names'])
-        print('ALL REAL DOCKER ACCEPTANCE CHECKS PASSED',flush=True)
-    finally:
-        for name in auxiliary: i.run(['docker','rm','-f',name])
-        for path in projects:
-            if (path/'compose.yaml').exists():
-                logs=i.compose(path,'logs','--tail=100')
-                (root/(path.name+'-services.log')).write_text(logs)
-                evidence=i.REPO/'evidence';evidence.mkdir(exist_ok=True)
-                (evidence/(path.name+'-services.log')).write_text(logs)
-                i.compose(path,'down')
-        print('Test installation data retained at',root,flush=True)
-
-if __name__=='__main__': main()
+                state=json.loads(i.run(['docker','inspect',cid]))[0]
+                check(not any(v for v in state['NetworkSettings']['Ports'].values()),service+' publicly published')
+            command(path,'backup')
+            saved=max((path/'backups').iterdir(),key=lambda p:p.name)
+            command(path,'restore',str(saved),ok=False)
+            i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-c',"UPDATE smoke SET value='changed';")
+            i.compose(path,'exec','-T','redis','redis-cli','SET','smoke','changed')
+            (path/'data/public/upload.txt').write_text('changed')
+            command(path,'restore',str(saved),'--confirm',cfg['project'])
+            command(path,'health')
+            check(i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','DB restore')
+            check(i.compose(path,'exec','-T','redis','redis-cli','GET','smoke')=='preserved','Redis restore')
+            check((path/'data/public/upload.txt').read_text()=='preserved','File restore')
+            check((path/'.env').read_bytes()==secret,'Restored credentials changed')
+            corrupt=root/(mode+'-corrupt');shutil.copytree(saved,corrupt)
+            with (corrupt/'stack.tar').open('ab') as stream:stream.write(b'corrupt')
+            command(path,'restore',str(corrupt),'--confirm',cfg['project'],ok=False)
+            command(path,'update','postgres','postgres:19-alpine','--confirm',cfg['project'],ok=False)
+            if mode=='nginx':
+                command(path,'update','php','php:8.4.13-fpm-alpine','--confirm',cfg['project'])
+                check(i.load(path)['images']['php']!=cfg['images']['php'],'Versioned update did not change image')
+            command(path,'update','php','php:8.4-fpm-alpine','--confirm',cfg['project'])
+            command(path,'health')
+            check((path/'data/public/upload.txt').read_text()=='preserved','Update persistence')
+            with socket.socket() as occupied:
+                occupied.bind(('127.0.0.1',0));occupied.listen()
+                collision=root/(mode+'-collision');install(collision,mode,occupied.getsockname()[1],ok=False)
+                check(not collision.exists(),'Collision created installation')
+            # Unrelated files are an error; reruns must not adopt arbitrary directories.
+            unknown=root/(mode+'-unknown');unknown.mkdir();(unknown/'keep').write_text('keep')
+            install(unknown,mode,port,ok=False);check((unknown/'keep').read_text()=='keep','Unknown data changed')
+            with_environment={'COMPOSE_PROJECT_NAME':'unrelated','DOCKER_HOST':'unix:///nonexistent','POSTGRES_PASSWORD':'wrong'}
+            original=dict(os.environ)
+            try:
+                os.environ.update(with_environment);command(path,'restart');install(path,mode,port)
+            finally:os.environ.clear();os.environ.update(original)
+            if mode=='nginx':
+                # User-editable PHP/FPM configuration, validated before recreation.
+                php_ini=path/'config/php.ini'
+                php_ini.write_text(php_ini.read_text()+'\nmemory_limit = 192M\n')
+                command(path,'apply-config')
+                check(i.compose(path,'exec','-T','php','php','-r','echo ini_get("memory_limit");')=='192M','PHP configuration was not applied')
+                nginx_text=(path/'config/nginx.conf').read_text()
+                (path/'config/nginx.conf').write_text('invalid nginx directive;\n')
+                command(path,'apply-config',ok=False)
+                check(i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','Invalid config changed data')
+                (path/'config/nginx.conf').write_text(nginx_text)
+                command(path,'apply-domain','localhost')
+                sql=root/'database.sql';command(path,'export-sql',str(sql))
+                check(sql.stat().st_mode & 0o077==0,'SQL dump permissions')
+                command(path,'export-table-sql',str(root/'table.sql'),'smoke')
+                command(path,'import-sql',str(sql),ok=False)
+                i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-c',"UPDATE smoke SET value='changed';")
+                command(path,'import-sql',str(sql),'--confirm',cfg['project'])
+                check(i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','SQL restore')
+                invalid=root/'invalid.sql';invalid.write_text('THIS IS INVALID SQL;')
+                command(path,'import-sql',str(invalid),'--confirm',cfg['project'],ok=False)
+                check(i.compose(path,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','Failed SQL import lost database')
+                backup_destination=root/'offsite-backups';command(path,'backup',str(backup_destination))
+                portable=max(backup_destination.iterdir(),key=lambda item:item.name)
+                restored=root/'restored';paths.append(restored)
+                result=subprocess.run([str(standalone),'--restore',str(portable),'--install-dir',str(restored),'--http-port',str(free_port()),'--http-bind','127.0.0.1'],text=True,capture_output=True)
+                check(result.returncode==0,result.stdout+result.stderr)
+                command(restored,'health')
+                check((restored/'.env').read_bytes()==secret,'Fresh restore credentials')
+                check(i.compose(restored,'exec','-T','db','psql','-U','fluidweb','-d','fluidweb','-Atc','SELECT value FROM smoke')=='preserved','Fresh restore database')
+                check((restored/'data/public/upload.txt').read_text()=='preserved','Fresh restore files')
+                i.compose(restored,'stop')
+                cert,key=own_certificate(root/'own-cert');https=free_port()
+                command(path,'configure-web','own','localhost',str(cert),str(key),'--https-port',str(https))
+                command(path,'health')
+                import http.client
+                connection=http.client.HTTPConnection('127.0.0.1',i.load(path)['http_port'],timeout=5)
+                connection.request('GET','/');response=connection.getresponse()
+                check(response.status==301 and response.getheader('Location')==f'https://localhost:{https}/','HTTP did not redirect to HTTPS')
+                response.read();connection.close()
+                other_cert,other_key=own_certificate(root/'wrong-key')
+                command(path,'cert-install','localhost',str(cert),str(other_key),ok=False)
+                command(path,'health')
+                command(path,'cert-install','localhost',str(other_cert),str(other_key))
+                print('PASS standalone packaging, PHP configuration, SQL import/export and rollback, fresh restore, own HTTPS/reload')
+            print('PASS '+mode+': health, rerun, persistence, backup/restore, update, collisions and isolation')
+            i.compose(path,'stop')
+    path=root/'acme';paths.append(path)
+    ca,key=own_certificate(root/'acme-server')
+    http_port=free_port();https_port=free_port();ca_port=free_port()
+    config={'pebble':{'listenAddress':':14000','managementListenAddress':':15000','certificate':'/test/certificate.pem','privateKey':'/test/key.pem','httpPort':http_port,'tlsPort':https_port,'ocspResponderURL':'','externalAccountBindingRequired':False}}
+    (root/'acme-server/config.json').write_text(json.dumps(config))
+    pebble='installer-smoke-acme-'+uuid.uuid4().hex[:8]
+    i.run(['docker','run','-d','--name',pebble,'--add-host','installer.test:host-gateway',
+           '-e','PEBBLE_VA_NOSLEEP=1','-e','PEBBLE_WFE_NONCEREJECT=0','-e','PEBBLE_AUTHZREUSE=0',
+           '-v',str(root/'acme-server')+':/test:ro','-p',f'127.0.0.1:{ca_port}:14000',
+           'ghcr.io/letsencrypt/pebble:2.8.0','-config','/test/config.json','-strict=false'])
+    import ssl,urllib.request
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(ca))))
+    for attempt in range(30):
+        try:
+            with opener.open(f'https://localhost:{ca_port}/dir',timeout=2) as response:check('newNonce' in json.load(response),'ACME directory is invalid')
+            break
+        except OSError:
+            if attempt==29:raise AssertionError(container_logs(pebble))
+            time.sleep(1)
+    result=subprocess.run([str(standalone),'--install-dir',str(path),'--web-mode','nginx','--tls-mode','letsencrypt',
+                           '--domain','installer.test','--email','operator@example.test','--http-port',str(http_port),
+                           '--https-port',str(https_port),'--acme-server',f'https://localhost:{ca_port}/dir','--acme-ca',str(ca),'--no-auto-renew'],text=True,capture_output=True)
+    check(result.returncode==0,result.stdout+result.stderr)
+    command(path,'health')
+    cfg=i.load(path)
+    cert=path/'config/letsencrypt/live/installer.test/fullchain.pem'
+    previous=cert.read_bytes();command(path,'cert-renew','--force')
+    check(cert.read_bytes()!=previous,'Forced ACME renewal did not replace certificate')
+    check('/.well-known/acme-challenge/' in i.compose(path,'logs','nginx'),'ACME did not request a real HTTP-01 challenge')
+    command(path,'cert-cron-add')
+    check(i.compose(path,'ps','-q','certbot'),'Container renewal scheduler not running')
+    command(path,'cert-cron-remove');command(path,'health')
+    command(path,'backup');saved=max((path/'backups').iterdir(),key=lambda item:item.name)
+    command(path,'restore',str(saved),'--confirm',cfg['project']);command(path,'health')
+    print('PASS actual ACME HTTP-01 issuance, forced renewal, automatic-renewal container and certificate backup/restore')
+    interactive=root/'interactive';paths.append(interactive)
+    output=terminal([str(standalone),'--install-dir',str(interactive)],f'\n2\nlocalhost\n{free_port()}\ny\n')
+    check('Infrastructure healthy' in output,'Interactive installer did not complete')
+    check('Healthy' in terminal([str(interactive/'command.sh')],'health\n'),'Interactive administration menu')
+    subprocess.run([str(standalone),'--command','--install-dir',str(interactive)],check=True)
+    print('PASS real terminal installation, administration menu and tooling-only update')
+    after=snapshot()
+    for cid,state in before.items():check(after.get(cid)==state,'Unrelated container changed: '+cid)
+    print('PASS all existing containers unchanged')
+finally:
+    for path in paths:
+        if (path/'compose.yaml').exists():i.compose(path,'down')
+    if pebble:
+        print('ACME server diagnostics: '+container_logs(pebble))
+        i.run(['docker','rm','-f',pebble])
+    i.run(['docker','rm','-f',sentinel])
+    print('Suite-owned containers removed; persistent test data retained at '+str(root))

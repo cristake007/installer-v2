@@ -1,0 +1,48 @@
+8.4-fpm-alpine: Pulling from library/php
+Digest: sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+Status: Image is up to date for php:8.4-fpm-alpine
+docker.io/library/php:8.4-fpm-alpine
+18-alpine: Pulling from library/postgres
+Digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+Status: Image is up to date for postgres:18-alpine
+docker.io/library/postgres:18-alpine
+8-alpine: Pulling from library/redis
+Digest: sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+Status: Image is up to date for redis:8-alpine
+docker.io/library/redis:8-alpine
+1.28-alpine: Pulling from library/nginx
+Digest: sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+Status: Image is up to date for nginx:1.28-alpine
+docker.io/library/nginx:1.28-alpine
+Infrastructure healthy at /opt/installer-v2-simple-final/nginx. Credentials: /opt/installer-v2-simple-final/nginx/.env (private).
+Infrastructure healthy at /opt/installer-v2-simple-final/nginx. Credentials: /opt/installer-v2-simple-final/nginx/.env (private).
+Infrastructure healthy at /opt/installer-v2-simple-final/nginx. Credentials: /opt/installer-v2-simple-final/nginx/.env (private).
+Infrastructure healthy at /opt/installer-v2-simple-final/nginx. Credentials: /opt/installer-v2-simple-final/nginx/.env (private).
+PASS nginx: health, rerun, persistence, backup/restore, update, collisions and isolation
+8.4-fpm-alpine: Pulling from library/php
+Digest: sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+Status: Image is up to date for php:8.4-fpm-alpine
+docker.io/library/php:8.4-fpm-alpine
+18-alpine: Pulling from library/postgres
+Digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+Status: Image is up to date for postgres:18-alpine
+docker.io/library/postgres:18-alpine
+8-alpine: Pulling from library/redis
+Digest: sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+Status: Image is up to date for redis:8-alpine
+docker.io/library/redis:8-alpine
+1.28-alpine: Pulling from library/nginx
+Digest: sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+Status: Image is up to date for nginx:1.28-alpine
+docker.io/library/nginx:1.28-alpine
+Infrastructure healthy at /opt/installer-v2-simple-final/external. Credentials: /opt/installer-v2-simple-final/external/.env (private).
+Configure your own web server using config/*.example; only loopback FastCGI was verified.
+Infrastructure healthy at /opt/installer-v2-simple-final/external. Credentials: /opt/installer-v2-simple-final/external/.env (private).
+Configure your own web server using config/*.example; only loopback FastCGI was verified.
+Infrastructure healthy at /opt/installer-v2-simple-final/external. Credentials: /opt/installer-v2-simple-final/external/.env (private).
+Configure your own web server using config/*.example; only loopback FastCGI was verified.
+Infrastructure healthy at /opt/installer-v2-simple-final/external. Credentials: /opt/installer-v2-simple-final/external/.env (private).
+Configure your own web server using config/*.example; only loopback FastCGI was verified.
+PASS external: health, rerun, persistence, backup/restore, update, collisions and isolation
+PASS all existing containers unchanged
+Suite-owned containers removed; persistent test data retained at /opt/installer-v2-simple-final

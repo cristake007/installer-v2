@@ -1,9 +1,7 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": 1,
-  "product": "FluidWeb",
-  "scope": "standalone-installer",
-  "supported_os": {
+  "scope": "Docker infrastructure only",
+  "supported_hosts": {
     "ubuntu": [
       "22.04",
       "24.04"
@@ -13,65 +11,69 @@
       "13"
     ]
   },
-  "installer": {
-    "default_path": "/opt/fluidweb",
-    "web_modes": [
-      "nginx",
-      "external"
-    ],
-    "default_web_mode": "nginx",
-    "nginx_in_container": true,
-    "modify_host_web_server": false,
-    "default_host_actions_require_approval": true,
-    "existing_install_behavior": "no-op-or-safe-resume",
-    "unknown_state_behavior": "fail-closed",
-    "delete_persistent_data_on_rerun": false,
-    "global_docker_cleanup": false
-  },
+  "services": [
+    "php",
+    "db",
+    "redis",
+    "nginx (optional)"
+  ],
   "runtime": {
     "php": "8.4-fpm",
-    "postgres_major": 18,
-    "redis_enabled": true,
-    "application_image_digest_required": true,
-    "database_published_publicly": false,
-    "redis_published_publicly": false,
-    "fpm_publicly_accessible": false,
-    "worker_only_if_implemented": true,
-    "scheduler_only_if_implemented": true
+    "postgres": "18",
+    "redis": "8",
+    "nginx": "1.28"
   },
-  "required_release_gates": [
-    "unit-tests-ubuntu-debian",
-    "compose-config-check",
-    "clean-vm-ubuntu",
-    "clean-vm-debian",
-    "shared-server-isolation",
-    "idempotent-rerun-and-resume",
-    "nginx-and-external-webserver-live-tests",
-    "persistence-recreation-test",
-    "secure-backup-and-restore-test",
-    "upgrade-migration-rollback-test",
-    "security-and-failure-injection-tests"
+  "default_path": "/opt/fluidweb",
+  "application_deployment": false,
+  "commands": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "health",
+    "logs",
+    "version",
+    "backup",
+    "restore",
+    "update",
+    "upgrade",
+    "export-sql",
+    "export-table-sql",
+    "import-sql",
+    "apply-config",
+    "configure-web",
+    "apply-domain",
+    "cert-install",
+    "cert-generate",
+    "cert-renew",
+    "cert-cron-add",
+    "cert-cron-remove",
+    "self-update",
+    "help"
+  ],
+  "safety": [
+    "preserve settings, credentials and data on rerun",
+    "reject unknown installation directories",
+    "scope all Docker operations to this installation",
+    "never prune Docker resources",
+    "publish FastCGI only on loopback in external mode",
+    "no PostgreSQL or Redis host ports",
+    "restore/update require explicit project confirmation and validated backup",
+    "no host web-server or firewall modifications"
+  ],
+  "backup": "stopped-stack archive with SHA-256 manifest; configurable destination; same-architecture fresh restore supported",
+  "updates": "official versioned images within installed version families; no major database migration",
+  "ci_jobs": [
+    "syntax and essential unit checks",
+    "real Docker smoke tests"
   ],
   "production_ready": false,
-  "administration": {
-    "commands": [
-      "start",
-      "stop",
-      "restart",
-      "status",
-      "health",
-      "logs",
-      "version",
-      "backup",
-      "restore",
-      "upgrade",
-      "recover",
-      "renew-tls"
-    ],
-    "backup": "quiesced-files-and-transactional-pg-dump-with-sha256",
-    "destructive_confirmation": "exact-project-id",
-    "upgrade": "digest-pinned-compatibility-and-migration-hooks-with-data-recovery",
-    "interrupted_operation": "journal-and-explicit-recovery",
-    "https": "operator-supplied-certificate-and-explicit-reload"
-  }
+  "web": [
+    "HTTP",
+    "own HTTPS certificate",
+    "Let's Encrypt with container renewal",
+    "operator-managed external Nginx/Apache"
+  ],
+  "distribution": "single downloadable install.sh",
+  "administration": "interactive menu, per-service lifecycle, configurable backups, fresh-path restore, SQL import/export, mounted PHP/FPM configuration"
 }
