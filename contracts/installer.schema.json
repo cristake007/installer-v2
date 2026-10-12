@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "product",
+    "scope",
+    "supported_os",
+    "installer",
+    "runtime",
+    "required_release_gates",
+    "production_ready",
+    "administration"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "version": {
+      "const": 1
+    },
+    "product": {
+      "const": "FluidWeb"
+    },
+    "scope": {
+      "const": "standalone-installer"
+    },
+    "supported_os": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ubuntu",
+        "debian"
+      ],
+      "properties": {
+        "ubuntu": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "debian": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "installer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_path",
+        "web_modes",
+        "default_web_mode",
+        "nginx_in_container",
+        "modify_host_web_server",
+        "default_host_actions_require_approval",
+        "existing_install_behavior",
+        "unknown_state_behavior",
+        "delete_persistent_data_on_rerun",
+        "global_docker_cleanup"
+      ],
+      "properties": {
+        "default_path": {
+          "const": "/opt/fluidweb"
+        },
+        "web_modes": {
+          "const": [
+            "nginx",
+            "external"
+          ]
+        },
+        "default_web_mode": {
+          "const": "nginx"
+        },
+        "nginx_in_container": {
+          "const": true
+        },
+        "modify_host_web_server": {
+          "const": false
+        },
+        "default_host_actions_require_approval": {
+          "const": true
+        },
+        "existing_install_behavior": {
+          "const": "no-op-or-safe-resume"
+        },
+        "unknown_state_behavior": {
+          "const": "fail-closed"
+        },
+        "delete_persistent_data_on_rerun": {
+          "const": false
+        },
+        "global_docker_cleanup": {
+          "const": false
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "php",
+        "postgres_major",
+        "redis_enabled",
+        "application_image_digest_required",
+        "database_published_publicly",
+        "redis_published_publicly",
+        "fpm_publicly_accessible",
+        "worker_only_if_implemented",
+        "scheduler_only_if_implemented"
+      ],
+      "properties": {
+        "php": {
+          "const": "8.4-fpm"
+        },
+        "postgres_major": {
+          "const": 18
+        },
+        "redis_enabled": {
+          "const": true
+        },
+        "application_image_digest_required": {
+          "const": true
+        },
+        "database_published_publicly": {
+          "const": false
+        },
+        "redis_published_publicly": {
+          "const": false
+        },
+        "fpm_publicly_accessible": {
+          "const": false
+        },
+        "worker_only_if_implemented": {
+          "const": true
+        },
+        "scheduler_only_if_implemented": {
+          "const": true
+        }
+      }
+    },
+    "required_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "production_ready": {
+      "type": "boolean"
+    },
+    "administration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commands",
+        "backup",
+        "destructive_confirmation",
+        "upgrade",
+        "interrupted_operation",
+        "https"
+      ],
+      "properties": {
+        "commands": {
+          "const": [
+            "start",
+            "stop",
+            "restart",
+            "status",
+            "health",
+            "logs",
+            "version",
+            "backup",
+            "restore",
+            "upgrade",
+            "recover",
+            "renew-tls"
+          ]
+        },
+        "backup": {
+          "const": "quiesced-files-and-transactional-pg-dump-with-sha256"
+        },
+        "destructive_confirmation": {
+          "const": "exact-project-id"
+        },
+        "upgrade": {
+          "const": "digest-pinned-compatibility-and-migration-hooks-with-data-recovery"
+        },
+        "interrupted_operation": {
+          "const": "journal-and-explicit-recovery"
+        },
+        "https": {
+          "const": "operator-supplied-certificate-and-explicit-reload"
+        }
+      }
+    }
+  }
+}

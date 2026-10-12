@@ -1,0 +1,2 @@
+PASS: nginx saved project, image, secrets, ports and local daemon override hostile environment; backup/restore preserve data
+PASS: external saved project, image, secrets, ports and local daemon override hostile environment; backup/restore preserve data

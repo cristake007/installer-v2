@@ -1,0 +1,254 @@
+[
+  {
+    "Command": "\"/entrypoint.sh /etc\u2026\"",
+    "CreatedAt": "2026-10-12 20:30:54 +0000 UTC",
+    "HealthStatus": "none",
+    "ID": "bf26e1ec36ed",
+    "Image": "registry:2",
+    "Labels": "",
+    "LocalVolumes": "1",
+    "Mounts": "27aec5e50734e2\u2026",
+    "Names": "installer-v2-registry-540736",
+    "Networks": "bridge",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "127.0.0.1:15001->5000/tcp",
+    "RunningFor": "7 seconds ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 seconds"
+  },
+  {
+    "Command": "\"/entrypoint.sh /etc\u2026\"",
+    "CreatedAt": "2026-10-12 19:56:21 +0000 UTC",
+    "HealthStatus": "none",
+    "ID": "b1920d7e7acb",
+    "Image": "registry:2",
+    "Labels": "",
+    "LocalVolumes": "1",
+    "Mounts": "2431cdc46c5bd8\u2026",
+    "Names": "installer-v2-test-registry",
+    "Networks": "bridge",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "127.0.0.1:15000->5000/tcp",
+    "RunningFor": "34 minutes ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 34 minutes"
+  },
+  {
+    "Command": "\"sleep infinity\"",
+    "CreatedAt": "2026-10-12 19:49:30 +0000 UTC",
+    "HealthStatus": "none",
+    "ID": "b019d9719c03",
+    "Image": "3811787313eb",
+    "Labels": "com.docker.compose.config-hash=fbcffff093a7c3852a74b54ae7d357a98df39075c9f5b776f02d2f42d2bffac3,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/tmp/installer-backend-20261012b/compose.yaml,com.docker.compose.project.environment_file=/tmp/installer-backend-20261012b/.env,com.docker.compose.project.working_dir=/tmp/installer-backend-20261012b,com.docker.compose.project=fluidweb_ac4c0ba74927,com.docker.compose.service=app,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Names": "fluidweb_ac4c0ba74927-app-1",
+    "Networks": "fluidweb_ac4c0ba74927_default",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "",
+    "RunningFor": "41 minutes ago",
+    "Size": "0B",
+    "State": "exited",
+    "Status": "Exited (137) 41 minutes ago"
+  },
+  {
+    "Command": "\"docker-daemon.sh\"",
+    "CreatedAt": "2026-10-12 14:10:29 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "45a2fb642be2",
+    "Image": "espocrm/espocrm:10.0.9",
+    "Labels": "com.docker.compose.config-hash=c722b3411a1248383b018d3b5421e70173f8b884e36db06428c79ca2d75d0b85,com.docker.compose.container-number=1,com.docker.compose.depends_on=web:service_healthy:false,com.docker.compose.image=sha256:3c0003729e314185b88afd3e3e8ee3f4649b119f504a2878695f913e95407d32,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/opt/espocrm-test/compose.yaml,com.docker.compose.project.working_dir=/opt/espocrm-test,com.docker.compose.project=espocrm-test,com.docker.compose.replace=daemon-1,com.docker.compose.service=daemon,com.docker.compose.version=5.6.0,org.opencontainers.image.created=2026-09-29T09:24:17.476Z,org.opencontainers.image.description=Official Docker Image for EspoCRM,org.opencontainers.image.licenses=AGPL-3.0,org.opencontainers.image.revision=4367b7466604260feb7a65a39ec9191c6195f19d,org.opencontainers.image.source=https://github.com/espocrm/espocrm-docker,org.opencontainers.image.title=espocrm-docker,org.opencontainers.image.url=https://github.com/espocrm/espocrm-docker,org.opencontainers.image.version=10.0.9",
+    "LocalVolumes": "0",
+    "Mounts": "/opt/espocrm-t\u2026,/root/espo_ext\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026",
+    "Names": "espocrm-test-daemon-1",
+    "Networks": "espocrm-test_isolated",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "80/tcp",
+    "RunningFor": "6 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 hours (healthy)"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-10-12 14:10:29 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "4cf7cf3f5e14",
+    "Image": "espocrm/espocrm:10.0.9",
+    "Labels": "com.docker.compose.config-hash=f342fc478136da047d82b3f8c593f41906418f4dd0440f0240e11862c0ab361f,com.docker.compose.container-number=1,com.docker.compose.depends_on=db:service_healthy:false,com.docker.compose.image=sha256:3c0003729e314185b88afd3e3e8ee3f4649b119f504a2878695f913e95407d32,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/opt/espocrm-test/compose.yaml,com.docker.compose.project.working_dir=/opt/espocrm-test,com.docker.compose.project=espocrm-test,com.docker.compose.replace=web-1,com.docker.compose.service=web,com.docker.compose.version=5.6.0,org.opencontainers.image.created=2026-09-29T09:24:17.476Z,org.opencontainers.image.description=Official Docker Image for EspoCRM,org.opencontainers.image.licenses=AGPL-3.0,org.opencontainers.image.revision=4367b7466604260feb7a65a39ec9191c6195f19d,org.opencontainers.image.source=https://github.com/espocrm/espocrm-docker,org.opencontainers.image.title=espocrm-docker,org.opencontainers.image.url=https://github.com/espocrm/espocrm-docker,org.opencontainers.image.version=10.0.9",
+    "LocalVolumes": "0",
+    "Mounts": "/opt/espocrm-t\u2026,/root/espo_ext\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026",
+    "Names": "espocrm-test-web-1",
+    "Networks": "espocrm-test_isolated",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "80/tcp",
+    "RunningFor": "6 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 hours (healthy)"
+  },
+  {
+    "Command": "\"/docker-entrypoint.\u2026\"",
+    "CreatedAt": "2026-10-12 14:02:40 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "5c2a14f7b0a7",
+    "Image": "nginx:1.28.0",
+    "Labels": "com.docker.compose.config-hash=32401c52ba527d0f4759b2a0557327382ec2e12412bba8a797011003d810c789,com.docker.compose.container-number=1,com.docker.compose.depends_on=web:service_healthy:false,com.docker.compose.image=sha256:3b03dfd827515a07ccf4946000f0bbdd2a4fb6aca7499249fcb6b1f9726823d6,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/opt/espocrm-test/compose.yaml,com.docker.compose.project.working_dir=/opt/espocrm-test,com.docker.compose.project=espocrm-test,com.docker.compose.service=gateway,com.docker.compose.version=5.6.0,maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>",
+    "LocalVolumes": "0",
+    "Mounts": "/opt/espocrm-t\u2026",
+    "Names": "espocrm-test-gateway-1",
+    "Networks": "espocrm-test_ingress,espocrm-test_isolated",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "127.0.0.1:18080->80/tcp",
+    "RunningFor": "6 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 hours (healthy)"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-10-12 14:02:40 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "99bd279dd6a1",
+    "Image": "mariadb:11.4.5",
+    "Labels": "com.docker.compose.config-hash=4eae30c5583c3a8d274f602ed3f62bc0a552185b9e393ef7081071959a0b730f,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:ec1794c8cd442f795b838f60379d7851acf8fef04cc39a8ecf74e7b1d6a3b6d7,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/opt/espocrm-test/compose.yaml,com.docker.compose.project.working_dir=/opt/espocrm-test,com.docker.compose.project=espocrm-test,com.docker.compose.service=db,com.docker.compose.version=5.6.0,org.opencontainers.image.authors=MariaDB Community,org.opencontainers.image.base.name=docker.io/library/ubuntu:noble,org.opencontainers.image.description=MariaDB Database for relational SQL,org.opencontainers.image.documentation=https://hub.docker.com/_/mariadb/,org.opencontainers.image.licenses=GPL-2.0,org.opencontainers.image.ref.name=ubuntu,org.opencontainers.image.source=https://github.com/MariaDB/mariadb-docker,org.opencontainers.image.title=MariaDB Database,org.opencontainers.image.url=https://github.com/MariaDB/mariadb-docker,org.opencontainers.image.vendor=MariaDB Community,org.opencontainers.image.version=11.4.5",
+    "LocalVolumes": "0",
+    "Mounts": "/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026",
+    "Names": "espocrm-test-db-1",
+    "Networks": "espocrm-test_isolated",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "3306/tcp",
+    "RunningFor": "6 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 hours (healthy)"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-10-12 14:02:40 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "e4261259ef6a",
+    "Image": "node:22.14.0-bookworm-slim",
+    "Labels": "com.docker.compose.config-hash=5c8b9dda14abf24ee72603fe49725b253b67c2b95a92d39d1fd742f341559e08,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:745403dc46b5ab4c998502b07a12cbf020cf2c30645427a68ec0718f02d647de,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/opt/espocrm-test/compose.yaml,com.docker.compose.project.working_dir=/opt/espocrm-test,com.docker.compose.project=espocrm-test,com.docker.compose.service=mock,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "0",
+    "Mounts": "/opt/espocrm-t\u2026,/opt/espocrm-t\u2026,/opt/espocrm-t\u2026",
+    "Names": "espocrm-test-mock-1",
+    "Networks": "espocrm-test_isolated",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "",
+    "RunningFor": "6 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 6 hours (healthy)"
+  },
+  {
+    "Command": "\"./docker-entrypoint\u2026\"",
+    "CreatedAt": "2026-10-12 11:38:51 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "26ca47ed7247",
+    "Image": "contextforge-local:1.0.11",
+    "Labels": "com.docker.compose.config-hash=bada1e40891e57b54265e85d3cbe7b9f113fd9926d27483803cdf55480a3b781,com.docker.compose.container-number=1,com.docker.compose.depends_on=migration:service_completed_successfully:false,redis:service_started:false,com.docker.compose.image=sha256:f00c4fb6d052a76cb7f8eae32e291a0df30d5e02afd324f7a615ad03fde1c4fe,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/root/mcp/compose.yaml,com.docker.compose.project.working_dir=/root/mcp,com.docker.compose.project=contextforge,com.docker.compose.replace=gateway-1,com.docker.compose.service=gateway,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Names": "contextforge-gateway-1",
+    "Networks": "contextforge_backend",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "127.0.0.1:4444->4444/tcp",
+    "RunningFor": "9 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 8 hours (healthy)"
+  },
+  {
+    "Command": "\"python -m mcpgatewa\u2026\"",
+    "CreatedAt": "2026-10-12 11:38:51 +0000 UTC",
+    "HealthStatus": "none",
+    "ID": "d5aaec795736",
+    "Image": "contextforge-local:1.0.11",
+    "Labels": "com.docker.compose.config-hash=7ea72ee7dba3bc16106607a48a4e2909b76a9ab259b19427ad093d1aa712e7ba,com.docker.compose.container-number=1,com.docker.compose.depends_on=postgres:service_healthy:false,com.docker.compose.image=sha256:f00c4fb6d052a76cb7f8eae32e291a0df30d5e02afd324f7a615ad03fde1c4fe,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/root/mcp/compose.yaml,com.docker.compose.project.working_dir=/root/mcp,com.docker.compose.project=contextforge,com.docker.compose.replace=migration-1,com.docker.compose.service=migration,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Names": "contextforge-migration-1",
+    "Networks": "contextforge_backend",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "",
+    "RunningFor": "9 hours ago",
+    "Size": "0B",
+    "State": "exited",
+    "Status": "Exited (0) 9 hours ago"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-10-12 11:27:04 +0000 UTC",
+    "HealthStatus": "healthy",
+    "ID": "9955df4db390",
+    "Image": "postgres:18",
+    "Labels": "com.docker.compose.config-hash=429c590aee776e8ff006e2bb38cee6ded67d373e8d0d99347fa2eb00e9071dc5,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:885953109528ad3dfc90362b1a6f50a78620b5315be19f187753d267e484dc5b,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/root/mcp/compose.yaml,com.docker.compose.project.working_dir=/root/mcp,com.docker.compose.project=contextforge,com.docker.compose.service=postgres,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "1",
+    "Mounts": "contextforge_p\u2026",
+    "Names": "contextforge-postgres-1",
+    "Networks": "contextforge_backend",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "5432/tcp",
+    "RunningFor": "9 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 8 hours (healthy)"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-10-12 11:27:04 +0000 UTC",
+    "HealthStatus": "none",
+    "ID": "0545d3c1bc77",
+    "Image": "redis:7-alpine",
+    "Labels": "com.docker.compose.config-hash=74cdb4e95d2782cb22ca1531d8c4fe5d3edc95f55b19e8785ea6cb5089997816,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/root/mcp/compose.yaml,com.docker.compose.project.working_dir=/root/mcp,com.docker.compose.project=contextforge,com.docker.compose.service=redis,com.docker.compose.version=5.6.0",
+    "LocalVolumes": "1",
+    "Mounts": "contextforge_r\u2026",
+    "Names": "contextforge-redis-1",
+    "Networks": "contextforge_backend",
+    "Platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    },
+    "Ports": "6379/tcp",
+    "RunningFor": "9 hours ago",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 8 hours"
+  }
+]

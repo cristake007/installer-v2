@@ -1,0 +1,1 @@
+PASS: current official Debian Docker apt signing key contains exactly one primary key with fingerprint 9DC858229FC7DD38854AE2D88D81803C0EBFCD88. No host apt configuration changed.
