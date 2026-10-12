@@ -1,3 +1,4 @@
+test_ambient_environment_cannot_override_managed_state (test_admin.AdminTests.test_ambient_environment_cannot_override_managed_state) ... ok
 test_ancestor_symlink_rejected (test_admin.AdminTests.test_ancestor_symlink_rejected) ... ok
 test_atomic_update_preserves_private_permissions (test_admin.AdminTests.test_atomic_update_preserves_private_permissions) ... ok
 test_backup_checksums_and_archive_paths (test_admin.AdminTests.test_backup_checksums_and_archive_paths) ... ok
@@ -11,7 +12,7 @@ test_contract_values_match_implementation (test_installer.Tests.test_contract_va
 test_directory_restrictions (test_installer.Tests.test_directory_restrictions) ... ok
 test_docker_key_rejects_extra_or_unexpected_primary_keys (test_installer.Tests.test_docker_key_rejects_extra_or_unexpected_primary_keys) ... ok
 test_external_mode_has_no_container_nginx_and_loopback_only (test_installer.Tests.test_external_mode_has_no_container_nginx_and_loopback_only) ... ok
-test_failed_runtime_preserves_unchanged_state_for_resume (test_installer.Tests.test_failed_runtime_preserves_unchanged_state_for_resume) ... Install incomplete, state preserved in /tmp/tmp3z4zu2te/site. See Docker logs. No cleanup performed.
+test_failed_runtime_preserves_unchanged_state_for_resume (test_installer.Tests.test_failed_runtime_preserves_unchanged_state_for_resume) ... Install incomplete, state preserved in /tmp/tmpqk5zi1ab/site. See Docker logs. No cleanup performed.
 ok
 test_immutable_image_required (test_installer.Tests.test_immutable_image_required) ... ok
 test_layout_isolation_and_secrets (test_installer.Tests.test_layout_isolation_and_secrets) ... ok
@@ -21,7 +22,7 @@ test_supported_os (test_installer.Tests.test_supported_os) ... ok
 test_unknown_state_cannot_be_overwritten (test_installer.Tests.test_unknown_state_cannot_be_overwritten) ... ok
 
 ----------------------------------------------------------------------
-Ran 20 tests in 0.033s
+Ran 21 tests in 0.036s
 
 OK
 Resuming interrupted installation with preserved configuration and credentials.

@@ -177,6 +177,20 @@ def main():
             corrupt=backup/'database.dump'; original=corrupt.read_bytes();corrupt.write_bytes(b'corrupted')
             cli(path,'restore',str(backup),'--confirm',cfg['project'],ok=False);corrupt.write_bytes(original)
             check(sql(path,'SELECT value FROM persistence')=='preserved','corrupt backup rejected without data loss')
+            ambient=dict(os.environ)
+            try:
+                os.environ.update({'COMPOSE_PROJECT_NAME':'installer-ambient-scope-test','APP_IMAGE':'injected:latest','POSTGRES_PASSWORD':'injected','APP_SECRET':'injected','HTTP_PORT':'19998','FPM_PORT':'19999','DOCKER_HOST':'unix:///tmp/installer-nonexistent.sock','DOCKER_CONTEXT':'nonexistent','COMPOSE_PROFILES':'unexpected'})
+                rendered=json.loads(i.compose(path,'config','--format','json'))
+                check(rendered['name']==cfg['project'] and rendered['services']['app']['image']==admin.load(path)['images']['app'],'ambient variables cannot change project or pinned image')
+                cli(path,'stop');install(path,args.image,mode,port);cli(path,'health')
+                saved=Path(cli(path,'backup').splitlines()[-1])
+                sql(path,"UPDATE persistence SET value='ambient-change'")
+                cli(path,'restore',str(saved),'--confirm',cfg['project'])
+                check(sql(path,'SELECT value FROM persistence')=='preserved','backup/restore ignores ambient credentials and Docker context')
+                cli(path,'upgrade',args.next_image,'--confirm',cfg['project'])
+                check(sql(path,'SELECT value FROM persistence')=='preserved','upgrade ignores ambient project/image/context overrides')
+            finally:
+                os.environ.clear();os.environ.update(ambient)
             check(i.run(['docker','network','inspect',cfg['project']+'_backend','--format','{{.Internal}}'])=='true','database/Redis backend network is internal')
             for service in ('db','redis'):
                 cid=i.compose(path,'ps','-q',service)

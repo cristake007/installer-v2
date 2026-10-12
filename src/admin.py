@@ -141,7 +141,7 @@ def refresh_assets(path, cfg):
         atomic(path/'public-assets.json',json.dumps(assets))
 
 def dbcmd(path, *args):
-    return ['docker', 'compose', '--project-directory', str(path), '--env-file', str(path/'.env'), '-f', str(path/'compose.yaml'), 'exec', '-T', 'db', *args]
+    return i.docker_command('compose', '--project-name', i.project_name(path), '--project-directory', str(path), '--env-file', str(path/'.env'), '-f', str(path/'compose.yaml'), 'exec', '-T', 'db', *args)
 
 
 def verify(backup):
@@ -194,7 +194,7 @@ def backup(path, cfg):
     try:
         i.compose(path, 'stop', 'app', *(['nginx'] if cfg['web_mode']=='nginx' else []))
         with (target/'database.dump').open('wb') as out:
-            subprocess.run(dbcmd(path, 'pg_dump', '-U', 'fluidweb', '-d', 'fluidweb', '-Fc'), stdout=out, check=True, timeout=300)
+            subprocess.run(dbcmd(path, 'pg_dump', '-U', 'fluidweb', '-d', 'fluidweb', '-Fc'), stdout=out, check=True, timeout=300, env=i.compose_environment(path))
         i.compose(path, 'stop', 'redis')
         with tarfile.open(target/'files.tar', 'w') as archive:
             for name in (*FILES, 'integrity.json', 'public-assets.json', 'data/public', 'data/storage', 'data/custom', 'data/cache', 'data/redis', *(['config/tls'] if cfg.get('tls') else [])):
@@ -234,7 +234,7 @@ def restore(path, source):
         raise i.InstallError('Backup belongs to a different installation')
     # Validate the database archive before touching the running application.
     with (source/'database.dump').open('rb') as inp:
-        subprocess.run(['docker','run','--rm','-i','--network','none','--entrypoint','pg_restore',cfg['images']['postgres'],'--list'], stdin=inp, stdout=subprocess.DEVNULL, check=True)
+        subprocess.run(i.docker_command('run','--rm','-i','--network','none','--entrypoint','pg_restore',cfg['images']['postgres'],'--list'), stdin=inp, stdout=subprocess.DEVNULL, check=True, env=i.docker_environment())
     atomic(path/'settings.json',json.dumps(cfg))
     atomic(path/'.env',environment)
     atomic(path/'compose.yaml',composition)
@@ -251,7 +251,7 @@ def restore(path, source):
     i.compose(path, 'exec', '-T', 'db', 'dropdb', '-U', 'fluidweb', '--if-exists', '--force', 'fluidweb')
     i.compose(path, 'exec', '-T', 'db', 'createdb', '-U', 'fluidweb', '-O', 'fluidweb', 'fluidweb')
     with (source/'database.dump').open('rb') as inp:
-        subprocess.run(dbcmd(path, 'pg_restore', '-U', 'fluidweb', '-d', 'fluidweb', '--exit-on-error'), stdin=inp, check=True, timeout=300)
+        subprocess.run(dbcmd(path, 'pg_restore', '-U', 'fluidweb', '-d', 'fluidweb', '--exit-on-error'), stdin=inp, check=True, timeout=300, env=i.compose_environment(path))
     i.compose(path, 'up', '-d', '--wait', '--force-recreate')
     i.validate_runtime(path, load(path))
 

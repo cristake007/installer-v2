@@ -25,9 +25,23 @@ class InstallError(Exception):
     pass
 
 
-def run(cmd: list[str], *, timeout: int = 120, capture: bool = True) -> str:
+def docker_environment(env: dict | None = None) -> dict:
+    result = dict(os.environ if env is None else env)
+    for key in ('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','COMPOSE_FILE','COMPOSE_PROFILES','COMPOSE_PROJECT_NAME'):
+        result.pop(key, None)
+    return result
+
+
+def docker_command(*args: str) -> list[str]:
+    return ['docker','--host','unix:///var/run/docker.sock',*args]
+
+
+def run(cmd: list[str], *, timeout: int = 120, capture: bool = True, env: dict | None = None) -> str:
+    if cmd[0] == 'docker':
+        cmd = docker_command(*cmd[1:])
+        env = docker_environment(env)
     try:
-        proc = subprocess.run(cmd, check=True, text=True,
+        proc = subprocess.run(cmd, check=True, text=True, env=env,
                               stdout=subprocess.PIPE if capture else None,
                               stderr=subprocess.PIPE if capture else None,
                               timeout=timeout)
@@ -357,9 +371,20 @@ def make_layout(path: Path, cfg: dict) -> None:
     protected_write(path / 'command.sh', control.read_text(), mode=0o750)
 
 
+def compose_environment(path: Path) -> dict:
+    env = docker_environment()
+    for line in (path / '.env').read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'): continue
+        if '=' not in line: raise InstallError('Invalid managed environment file')
+        key, value = line.split('=', 1)
+        if not re.fullmatch('[A-Z_][A-Z0-9_]*', key): raise InstallError('Invalid environment key')
+        env[key] = value
+    return env
+
+
 def compose(path: Path, *args: str, timeout: int = 300) -> str:
-    return run(['docker', 'compose', '--project-directory', str(path), '--env-file', str(path / '.env'),
-                '-f', str(path / 'compose.yaml'), *args], timeout=timeout)
+    return run(['docker', 'compose', '--project-name', project_name(path), '--project-directory', str(path), '--env-file', str(path / '.env'),
+                '-f', str(path / 'compose.yaml'), *args], timeout=timeout, env=compose_environment(path))
 
 
 def validate_runtime(path: Path, cfg: dict) -> None:

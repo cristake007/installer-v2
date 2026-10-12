@@ -22,6 +22,18 @@ class AdminTests(unittest.TestCase):
             (path/'settings.json').write_text('[]')
             with self.assertRaises(i.InstallError):admin.load(path)
 
+    def test_ambient_environment_cannot_override_managed_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'site';cfg=i.settings(args(path),IMAGES);i.make_layout(path,cfg)
+            with patch.dict(i.os.environ,{'APP_IMAGE':'injected:latest','POSTGRES_PASSWORD':'injected','COMPOSE_PROJECT_NAME':'unrelated','DOCKER_HOST':'tcp://example.invalid:2375'}):
+                env=i.compose_environment(path)
+                self.assertEqual(env['APP_IMAGE'],IMAGES['app'])
+                self.assertNotEqual(env['POSTGRES_PASSWORD'],'injected')
+                self.assertNotIn('DOCKER_HOST',env)
+                with patch.object(i,'run',return_value='') as command:i.compose(path,'stop')
+                argv=command.call_args.args[0]
+                self.assertEqual(argv[argv.index('--project-name')+1],i.project_name(path))
+
     def test_tampered_configuration_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'site';cfg=i.settings(args(path),IMAGES);i.make_layout(path,cfg);admin.seal(path)
