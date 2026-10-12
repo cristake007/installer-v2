@@ -1,0 +1,76 @@
+name: Installer CI (unit, schema and Compose)
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  python-ubuntu:
+    name: "Python and safety tests / ${{ matrix.os }}"
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax and unit tests
+        run: |
+          bash -n install.sh command.sh
+          python -m compileall -q src tests
+          python -m unittest discover -s tests -v
+      - name: Contract schema
+        run: |
+          python -m pip install jsonschema==4.23.0
+          python - <<'PY'
+          import json
+          from jsonschema import Draft202012Validator
+          schema=json.load(open('contracts/installer.schema.json'))
+          data=json.load(open('contracts/installer.v1.json'))
+          Draft202012Validator.check_schema(schema)
+          Draft202012Validator(schema).validate(data)
+          print('JSON contract/schema valid')
+          PY
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck install.sh command.sh
+  python-debian:
+    name: "Unit tests / Debian ${{ matrix.version }} container"
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['12', '13']
+    container:
+      image: "debian:${{ matrix.version }}"
+    steps:
+      - run: apt-get update && apt-get install -y git python3 bash ca-certificates
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -v
+      - run: bash -n install.sh command.sh
+  compose-config:
+    name: Compose rendering (not a live install)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate both web modes using Docker Compose
+        run: |
+          python3 - <<'PY'
+          import pathlib, tempfile, sys
+          sys.path.insert(0,'src')
+          import installer
+          with tempfile.TemporaryDirectory() as tmp:
+              for mode in ('nginx','external'):
+                  root=pathlib.Path(tmp)/mode
+                  obj=type('Args',(),{'install_dir':str(root),'web_mode':mode,'http_port':8080,'fpm_port':9080})()
+                  pin=lambda repo: repo+'@sha256:'+'a'*64
+                  cfg=installer.settings(obj,{'app':pin('ghcr.io/cristake007/fluidweb'), 'postgres':pin('postgres'), 'redis':pin('redis'), 'nginx':pin('nginx')})
+                  installer.make_layout(root,cfg)
+                  installer.compose(root,'config','--quiet')
+                  print(mode,'Compose config passed')
+          PY

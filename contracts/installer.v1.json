@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "product": "FluidWeb",
+  "scope": "standalone-installer",
+  "supported_os": {"ubuntu": ["22.04", "24.04"], "debian": ["12", "13"]},
+  "installer": {
+    "default_path": "/opt/fluidweb",
+    "web_modes": ["nginx", "external"],
+    "default_web_mode": "nginx",
+    "nginx_in_container": true,
+    "modify_host_web_server": false,
+    "default_host_actions_require_approval": true,
+    "existing_install_behavior": "no-op-or-safe-resume",
+    "unknown_state_behavior": "fail-closed",
+    "delete_persistent_data_on_rerun": false,
+    "global_docker_cleanup": false
+  },
+  "runtime": {
+    "php": "8.4-fpm",
+    "postgres_major": 18,
+    "redis_enabled": true,
+    "application_image_digest_required": true,
+    "database_published_publicly": false,
+    "redis_published_publicly": false,
+    "fpm_publicly_accessible": false,
+    "worker_only_if_implemented": true,
+    "scheduler_only_if_implemented": true
+  },
+  "required_release_gates": [
+    "unit-tests-ubuntu-debian",
+    "compose-config-check",
+    "clean-vm-ubuntu",
+    "clean-vm-debian",
+    "shared-server-isolation",
+    "idempotent-rerun-and-resume",
+    "nginx-and-external-webserver-live-tests",
+    "persistence-recreation-test",
+    "secure-backup-and-restore-test",
+    "upgrade-migration-rollback-test",
+    "security-and-failure-injection-tests"
+  ],
+  "production_ready": false
+}
