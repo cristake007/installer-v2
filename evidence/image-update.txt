@@ -1,0 +1,51 @@
+Infrastructure healthy at /opt/installer-v2-simple-final/nginx. Credentials: /opt/installer-v2-simple-final/nginx/.env (private).
+8.4.13-fpm-alpine: Pulling from library/php
+d58f640ef586: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+fc95ac84397d: Pulling fs layer
+2d35ebdb57d9: Pulling fs layer
+27201e4a7baa: Pulling fs layer
+e1e6590c00a6: Pulling fs layer
+a1399ace04db: Pulling fs layer
+2bca2feef647: Pulling fs layer
+16fe403392f1: Pulling fs layer
+9e7b4b38e816: Pulling fs layer
+ed4c191bcad7: Pulling fs layer
+5f9b65592252: Pulling fs layer
+4f4fb700ef54: Already exists
+27201e4a7baa: Download complete
+e1e6590c00a6: Download complete
+5f9b65592252: Download complete
+a1399ace04db: Download complete
+d58f640ef586: Download complete
+fc95ac84397d: Download complete
+16fe403392f1: Download complete
+ed4c191bcad7: Download complete
+2d35ebdb57d9: Download complete
+2bca2feef647: Download complete
+2d35ebdb57d9: Pull complete
+9e7b4b38e816: Download complete
+2c4f5dcc38ee: Download complete
+61b8f0def29b: Download complete
+e1e6590c00a6: Pull complete
+a1399ace04db: Pull complete
+16fe403392f1: Pull complete
+fc95ac84397d: Pull complete
+9e7b4b38e816: Pull complete
+5f9b65592252: Pull complete
+d58f640ef586: Pull complete
+4f4fb700ef54: Pull complete
+27201e4a7baa: Pull complete
+ed4c191bcad7: Pull complete
+2bca2feef647: Pull complete
+Digest: sha256:aee4a044beefc7d88d0419aee8825491e02391f37707b8fc0d8edba1a29c1165
+Status: Downloaded newer image for php:8.4.13-fpm-alpine
+docker.io/library/php:8.4.13-fpm-alpine
+Updated php; backup: /opt/installer-v2-simple-final/nginx/backups/1791841690596163612
+PASS distinct official PHP update: php:8.4.13-fpm-alpine
+8.4-fpm-alpine: Pulling from library/php
+Digest: sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a
+Status: Image is up to date for php:8.4-fpm-alpine
+docker.io/library/php:8.4-fpm-alpine
+Updated php; backup: /opt/installer-v2-simple-final/nginx/backups/1791841704135663922
+PASS distinct official PHP update: php:8.4-fpm-alpine

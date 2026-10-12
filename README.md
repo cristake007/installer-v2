@@ -1,38 +1,29 @@
-# Standalone installer v2
+# Simple Docker infrastructure installer
 
-This repository contains only installation and administration tooling. It has no dependency on an application source repository. The complete reference application is the PHP 8.4-FPM fixture under `tests/fixture`.
+Installs **PHP-FPM 8.4, PostgreSQL 18, Redis 8 and optionally Nginx**. No application repository, application image, framework, migrations or deployment hooks.
 
-**Not production qualified.** Real Docker qualification and its logs are recorded in `evidence/REPORT.md`. Clean Ubuntu/Debian VM gates are mandatory and have not yet been run. No release or production readiness claim is made.
-
-Ubuntu 22.04/24.04 and Debian 12/13 are supported. Python 3.10+, root, 2 GiB free disk, Docker Engine 24+ and Compose 2.20+ are required. `--install-docker` explicitly authorizes installation from Docker's fingerprint-verified official apt repository when Docker is absent. An existing broken Docker installation or unrelated container runtime is diagnosed rather than replaced. Apt refuses package removals and automatic restarts of unrelated services are suppressed. Preflight never installs packages or changes host services:
+On Ubuntu 22.04/24.04 or Debian 12/13, with Python 3 and root access:
 
 ```sh
-./install.sh --preflight
-sudo ./install.sh --web-mode nginx --http-bind 127.0.0.1 --http-port 8080 \
-  --app-image 'registry.example/application@sha256:<64-hex-digest>'
+sudo bash install.sh
 ```
 
-The default path is `/opt/fluidweb`; use `--install-dir /absolute/path` to change it. Application images must implement [the image interface](contracts/application.v1.json). They contain public assets, a `www-data` account, PHP 8.4-FPM on port 9000, a CLI health probe, HTTP health endpoint, compatibility probe and idempotent migration hook. No Symfony or other framework is assumed. Dependency images are pulled once and recorded as immutable digests. PostgreSQL 18 and Redis persist on private networks; external mode publishes FastCGI only on IPv4 loopback. Compose operations are scoped to the installation's unique project.
-
-First installation initializes assets and image-specific data ownership, runs migrations, and checks database, Redis and application health. Reruns preserve settings/secrets/data, start stopped services, and verify actual health. Interrupted provisioning resumes with preserved credentials; corrupt or unknown configuration fails closed. Configuration integrity records detect edits or mismatches. Do not edit generated settings, Compose or `.env` directly. An interrupted destructive operation requires explicitly approved `recover` before further changes.
-
-## Web server and TLS
-
-Nginx runs in Docker by default. Ports and IPv4 binding are configurable. To use an operator-managed host Nginx/Apache, select `--web-mode external --fpm-port 9080`; rendered example vhosts are written under `config/`. The installer does not install, configure or reload host web servers or alter firewall rules. External health verifies loopback FastCGI but does not claim public HTTP readiness. Operators must restrict filesystem access, configure DNS/TLS and validate their vhosts.
-
-Container TLS uses operator-provided PEM files:
+Answer three questions: installation directory, Nginx container or external web server, and port. The default directory is `/opt/fluidweb`. If Docker is missing, the installer asks whether to install it from Docker's official apt repository. Existing broken Docker installations are diagnosed rather than replaced. For unattended installation:
 
 ```sh
-sudo ./install.sh --web-mode nginx --app-image 'registry.example/application@sha256:<digest>' \
-  --tls-cert /path/fullchain.pem --tls-key /path/key.pem --https-port 443
-sudo /opt/fluidweb/command.sh renew-tls /path/new-fullchain.pem /path/new-key.pem
+sudo bash install.sh --web-mode nginx --http-port 8080
+sudo bash install.sh --web-mode external --fpm-port 9080 --install-dir /opt/my-stack
+# Explicitly permit Docker installation if it is missing:
+sudo bash install.sh --install-docker --web-mode nginx
 ```
 
-Keys are copied with private permissions; certificate/key matching is validated before loading. Renewal validates the pair, tests Nginx configuration and reloads it. Certificate issuance, expiry monitoring and scheduling renewal belong to the operator; automatic ACME issuance is not implemented. HTTP remains available alongside HTTPS.
+Use `--http-bind 127.0.0.1` for local HTTP, or keep the default `0.0.0.0`. External mode binds FastCGI only to loopback and writes Nginx/Apache example vhosts in `config/`. You manage the host web server, firewall and HTTPS; this script does not alter them. The examples serve the shared document root and forward PHP requests to loopback FastCGI.
 
-## Administration
+Official versioned images are resolved once to digests. PostgreSQL and Redis have no published host ports. Data is under `data/`; PostgreSQL credentials are in the private `.env` file. PHP files go in `data/public/`. The initial `index.php` and `health.php` only report the PHP version. PHP extensions/application deployment are your responsibility.
 
-Run the installed `command.sh`. All operations share the installer lock:
+Rerunning starts stopped services and checks real PostgreSQL, Redis and PHP-FPM health, preserving credentials, settings and data. Unknown directories and old application-installer formats are rejected without modification. A failed service startup can be retried by rerunning the installer; incomplete configuration requires operator inspection. There is no automatic migration of old installations.
+
+## Manage the stack
 
 ```sh
 sudo /opt/fluidweb/command.sh start
@@ -40,38 +31,34 @@ sudo /opt/fluidweb/command.sh stop
 sudo /opt/fluidweb/command.sh restart
 sudo /opt/fluidweb/command.sh status
 sudo /opt/fluidweb/command.sh health
-sudo /opt/fluidweb/command.sh logs app
+sudo /opt/fluidweb/command.sh logs php
 sudo /opt/fluidweb/command.sh version
 sudo /opt/fluidweb/command.sh backup
 ```
 
-`status` prints container state; `health` probes functionality and exits nonzero on failure. Lifecycle commands verify health. Logs accept only known service names. Version reports the exact configured image digests. Errors exit 1; invalid CLI syntax exits 2. Secrets and backups are private; Docker/root access itself grants access to container environment credentials.
+Backups briefly stop the **entire stack** and archive its persistent data, settings and credentials after clean PostgreSQL/Redis shutdown. Services restart afterwards. The archive has a SHA-256 manifest and private permissions. Copy backups off-host; retention is your responsibility. Backups reject links/special files and custom PostgreSQL tablespaces are not supported.
 
-Backups stop application writers, create a transactional PostgreSQL custom-format dump, stop Redis to snapshot its persisted files, and archive public/upload/configuration files. SHA-256 checksums and safe archive inventory are validated. Services are restarted even if backup fails. Backups remain under `backups/`; copy them securely off-host and establish retention separately. Backup requires enough disk for the data snapshot and headroom. No automatic deletion is performed.
-
-Restore and upgrade require independent explicit approval using the exact project ID printed by `version`:
+Restore/update require the project ID printed by `version`:
 
 ```sh
-sudo /opt/fluidweb/command.sh restore /opt/fluidweb/backups/<timestamp> --confirm fluidweb_<project-id>
-sudo /opt/fluidweb/command.sh upgrade 'registry.example/application@sha256:<digest>' --confirm fluidweb_<project-id>
-sudo /opt/fluidweb/command.sh recover --confirm fluidweb_<project-id>
+sudo /opt/fluidweb/command.sh restore /opt/fluidweb/backups/TIMESTAMP --confirm fluidweb_PROJECT
+sudo /opt/fluidweb/command.sh update php php:8.4-fpm-alpine --confirm fluidweb_PROJECT
+sudo /opt/fluidweb/command.sh update postgres postgres:18-alpine --confirm fluidweb_PROJECT
+sudo /opt/fluidweb/command.sh update redis redis:8-alpine --confirm fluidweb_PROJECT
+sudo /opt/fluidweb/command.sh update nginx nginx:1.28-alpine --confirm fluidweb_PROJECT
 ```
 
-Restore verifies both checksums and the PostgreSQL archive before replacing this installation's data; it also saves a safety backup of the current state. Backups from other projects are rejected. Restoration recreates and restores the application database, including all schemas, replaces application/Redis files, and verifies health. Upgrade runs an isolated compatibility hook, takes a validated backup, updates the pinned application image and tracked public assets, and runs the migration hook. A failed migration restores the old image, database and files. Operation journals allow explicit recovery after process interruption, including partially updated configuration. Persistent user uploads must not conflict with baked application asset names. Database/Redis major upgrades are not implicitly performed by application upgrades.
+Restore validates the backup before changing data and saves a safety backup. Backups restore to the original installation path/project. Updates pull an official versioned image within the installed family, take a backup, recreate services and check health; failed updates restore the previous images and data. PostgreSQL major-version migration is deliberately not automated. An interrupted restore requires operator inspection and the retained safety backup; there are no recovery journals. Do not edit generated `settings.json` or `compose.yaml` directly.
 
-Destructive operations require a healthy installation to take the initial safety backup. If an operation is interrupted, retain all journals, backups and data and use `recover`. A completely lost installation root requires reconstructing the original project path/configuration from an off-host backup; automated relocation to a different project is not supported.
+All Docker operations use the local daemon and the installation's project. There is no global cleanup; unrelated containers, volumes and networks are untouched.
 
-## Tests and release gates
+## Tests
 
 ```sh
 python3 -m unittest discover -s tests -v
-sudo bash tests/run-integration.sh /opt/installer-v2-disposable-test
+sudo bash tests/run-integration.sh /opt/disposable-stack-test
 ```
 
-The real integration suite builds its own good, upgraded and failing PHP-FPM images, pushes them to an isolated loopback registry and installs only immutable digests. It tests both modes, operator Nginx/Apache vhosts, HTTPS/reload, collisions, credentials, interruption, recreation persistence, logical database/file backup and restore, destructive migration failure recovery, outage recovery, corruption rejection and unrelated-container isolation. Only suite-owned projects/auxiliary containers are stopped/removed. Test installation data is retained.
+The smoke suite uses official images without building applications or running a test registry. It checks both web modes, health, rerun, stopped-service recovery, recreation persistence, database/file/Redis backup and restore, updates, corrupt-backup and major-update rejection, port conflicts and unrelated-container isolation. It removes only its own containers and retains data.
 
-CI has two job types: unit/schema/shell checks using distribution Python in Ubuntu 22.04/24.04 and Debian 12/13 containers, and real Docker tests on Ubuntu 22.04/24.04 runners. Compose validation runs inside real installation tests. Container checks validate Python/OS compatibility; they do not establish VM installation readiness. The separate manually dispatched VM workflow requires operator-provided **clean disposable** self-hosted VMs with Python, Git, sudo and no Docker, labeled as specified in `.github/workflows/vm-acceptance.yml`. Its bootstrap and full integration gates fail on actual defects and retain logs. These VMs are not available in the current workspace.
-
-Machine-readable requirements are in `contracts/installer.v1.json` and its schema. The original release gates remain required. See `AGENTS.md` for the execution and isolation contract.
-
-Docker operations always use the local rootful Unix socket and the saved installation project and environment. Ambient Docker/Compose variables cannot redirect administration or replace pinned images and credentials. CI helper actions use Node 24; self-hosted runners need version 2.327.1 or newer. The installer requires no Node runtime.
+CI has exactly two jobs: syntax/essential unit checks and real Docker smoke tests. No self-hosted VM workflow or release gate is required. Supported-OS checks and Docker bootstrap code remain, but clean-host apt bootstrap has not been exercised here; no production-readiness claim is made. See `evidence/REPORT.md` for current test results.

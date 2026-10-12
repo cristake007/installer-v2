@@ -1,156 +1,83 @@
-import argparse
 import json
 import os
 from pathlib import Path
-import re
 import socket
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 import installer as i
+import admin as a
 
-DIGEST = 'ghcr.io/cristake007/fluidweb@sha256:' + 'a' * 64
-IMAGES = {'app': DIGEST, 'postgres': 'postgres@sha256:'+'b'*64,
-          'redis': 'redis@sha256:'+'c'*64, 'nginx': 'nginx@sha256:'+'d'*64}
-
-
-def args(path, mode='nginx'):
-    return argparse.Namespace(install_dir=str(path), web_mode=mode,
-                              http_port=8080, fpm_port=9080,
-                              app_image=DIGEST, install_docker=False)
-
-
-class Tests(unittest.TestCase):
-    def test_supported_os(self):
+class EssentialTests(unittest.TestCase):
+    def test_supported_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
-            osr=Path(tmp)/'os-release'
-            for name, version in [('ubuntu','22.04'),('ubuntu','24.04'),('debian','12'),('debian','13')]:
-                osr.write_text(f'ID={name}\nVERSION_ID="{version}"\n')
-                i.validate_host(osr)
-            for name, version in [('ubuntu','20.04'),('debian','11'),('arch','rolling')]:
-                osr.write_text(f'ID={name}\nVERSION_ID={version}\n')
-                with self.assertRaises(i.InstallError): i.validate_host(osr)
+            p=Path(tmp)/'os-release'
+            for family,versions in i.SUPPORTED.items():
+                for version in versions:
+                    p.write_text(f'ID={family}\nVERSION_ID="{version}"\n');i.validate_host(p)
+            p.write_text('ID=fedora\nVERSION_ID=42\n')
+            with self.assertRaises(i.InstallError): i.validate_host(p)
 
-    def test_bootstrap_rejects_unrelated_runtime_before_changes(self):
-        with patch.object(i.shutil,'which',side_effect=lambda name: '/usr/bin/containerd' if name=='containerd' else None),\
-             patch.object(i,'run',side_effect=AssertionError('No host mutations permitted')):
-            with self.assertRaises(i.InstallError):i.install_docker('debian','13')
-
-    def test_docker_key_rejects_extra_or_unexpected_primary_keys(self):
-        valid='pub:-:4096:1:docker\nfpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:\n'
-        i.validate_docker_key(valid)
-        for text in (valid+'pub:-:4096:1:attacker\n',valid.replace('9DC858','AAAAAA'),''):
-            with self.assertRaises(i.InstallError):i.validate_docker_key(text)
-
-    def test_directory_restrictions(self):
-        for path in ('relative', '/', '/opt/../etc'):
-            with self.assertRaises(i.InstallError): i.validate_install_dir(path)
-        self.assertEqual(i.validate_install_dir('/opt/fluidweb'), Path('/opt/fluidweb'))
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp,'pointer').symlink_to(Path(tmp,'target'))
-            with self.assertRaises(i.InstallError): i.validate_install_dir(tmp+'/pointer')
-
-    def test_port_validation(self):
-        for port in (0, -1, 22, 1023, 65536):
+    def test_paths_and_ports(self):
+        for name in ('/','relative','/opt/../etc'):
+            with self.assertRaises(i.InstallError): i.validate_install_dir(name)
+        with socket.socket() as s:
+            s.bind(('127.0.0.1',0));s.listen()
+            self.assertFalse(i.is_port_free(s.getsockname()[1],'127.0.0.1'))
+        for port in (-1,0,65536):
             with self.assertRaises(i.InstallError): i.validate_port(port)
-        for port in (80, 443, 1024, 8080, 65535): i.validate_port(port)
-        with socket.socket() as sock:
-            sock.bind(('127.0.0.1', 0))
-            self.assertFalse(i.is_port_free(sock.getsockname()[1]))
 
-    def test_immutable_image_required(self):
-        for value in ('ghcr.io/cristake007/fluidweb:dev', 'fluidweb:latest', 'fluidweb:1.0', 'fluidweb@sha256:123'):
-            with self.assertRaises(i.InstallError): i.validate_app_image(value)
-        i.validate_app_image(DIGEST)
-
-    def test_layout_isolation_and_secrets(self):
+    def test_only_own_project_and_local_docker(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp)/'fluidweb'
-            cfg = i.settings(args(path), IMAGES)
-            i.make_layout(path, cfg)
-            self.assertEqual((path/'.env').stat().st_mode & 0o777, 0o600)
-            self.assertEqual((path/'data').stat().st_mode & 0o777, 0o755)
-            self.assertEqual((path/'data/public').stat().st_mode & 0o777, 0o755)
-            self.assertEqual((path/'data/postgres').stat().st_mode & 0o777, 0o700)
-            self.assertTrue((path/'data/redis').is_dir())
-            self.assertTrue((path/'data/storage').is_dir())
-            self.assertTrue((path/'config/apache.conf.example').exists())
-            self.assertEqual(json.loads((path/'settings.json').read_text()), cfg)
-            with self.assertRaises(FileExistsError): i.make_layout(path, cfg)
-            text=(path/'compose.yaml').read_text()
-            self.assertNotIn('docker.sock',text)
-            self.assertNotIn('ports:\n      - "5432',text)
-            self.assertNotIn('ports:\n      - "6379',text)
-            self.assertNotIn('down -v',text)
-            self.assertIn('internal: true',text)
-            self.assertIn('nginx:\n',text)
+            p=Path(tmp);(p/'.env').write_text('POSTGRES_PASSWORD=saved\n')
+            with patch.dict(os.environ,{'DOCKER_HOST':'tcp://evil','COMPOSE_PROJECT_NAME':'other','POSTGRES_PASSWORD':'wrong'}):
+                env=i.compose_environment(p)
+                self.assertNotIn('DOCKER_HOST',env);self.assertNotIn('COMPOSE_PROJECT_NAME',env)
+                self.assertEqual(env['POSTGRES_PASSWORD'],'saved')
+                with patch.object(i,'run',return_value='') as run:
+                    i.compose(p,'stop')
+                    self.assertIn(i.project_name(p),run.call_args.args[0])
 
-    def test_external_mode_has_no_container_nginx_and_loopback_only(self):
+    def test_private_services_and_official_images(self):
+        cfg={'images':{key:key+'@sha256:'+'a'*64 for key in i.DEFAULT_IMAGES},'web_mode':'nginx','http_bind':'127.0.0.1','http_port':8080,'fpm_port':9080}
+        i.validate_images(cfg['images'])
+        services=json.loads(i.render_compose(cfg))['services']
+        self.assertNotIn('ports',services['php']);self.assertNotIn('ports',services['db']);self.assertNotIn('ports',services['redis'])
+        self.assertNotIn('app',services)
+        cfg['web_mode']='external';services=json.loads(i.render_compose(cfg))['services']
+        self.assertNotIn('nginx',services);self.assertEqual(services['php']['ports'],['127.0.0.1:9080:9000'])
+        cfg['images']['php']='php:latest'
+        with self.assertRaises(i.InstallError):i.validate_images(cfg['images'])
+
+    def test_corrupt_backup_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg=i.settings(args(Path(tmp)/'a', 'external'), IMAGES)
-            text=i.render_compose(cfg)
-            self.assertNotIn('  nginx:\n', text)
-            self.assertIn('127.0.0.1:${FPM_PORT}:9000', text)
-            self.assertNotIn('0.0.0.0:9000', text)
+            p=Path(tmp);(p/'stack.tar').write_bytes(b'corrupt')
+            (p/'manifest.json').write_text(json.dumps({'format':'stack-backup-v1','project':'ours','sha256':'wrong'}))
+            with self.assertRaises(i.InstallError):a.verify(p,'ours')
+            with self.assertRaises(i.InstallError):a.verify(p,'other')
 
-    def test_rerun_preserves_files_and_verifies_runtime(self):
+    def test_major_updates_rejected_before_mutation(self):
+        with patch.object(i,'image_digest') as pull:
+            for service,image in (('postgres','postgres:19-alpine'),('php','php:latest'),('redis','evil/redis:8-alpine')):
+                with self.assertRaises(i.InstallError): a.update(Path('/opt/unused'),{},service,image)
+            pull.assert_not_called()
+
+    def test_failed_update_restores_cold_backup_without_requiring_health(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'site'
-            a=args(path)
-            cfg=i.settings(a, IMAGES)
-            i.make_layout(path, cfg)
-            i.safe_json(path/'installed.json', {'state':'ready'})
-            import admin
-            admin.seal(path)
-            before={p.relative_to(path): (p.stat().st_mtime_ns,p.read_bytes())
-                    for p in path.rglob('*') if p.is_file()}
-            with patch.object(i,'validate_host'), patch.object(i,'check_disk'), patch.object(i.os,'geteuid',return_value=0),\
-                 patch.object(i,'docker_available',return_value=True),\
-                 patch.object(i,'compose',return_value='running') as lifecycle,\
-                 patch.object(i,'validate_runtime') as health:
-                i.install(a)
-            after={p.relative_to(path): (p.stat().st_mtime_ns,p.read_bytes())
-                   for p in path.rglob('*') if p.is_file()}
-            self.assertEqual(before,after)
-            lifecycle.assert_called_once_with(path, 'up', '-d', '--wait')
-            health.assert_called_once_with(path,cfg)
+            p=Path(tmp)
+            cfg={'web_mode':'nginx','images':{'php':'php@sha256:'+'a'*64}}
+            with patch.object(i,'image_digest',return_value='php@sha256:'+'b'*64), patch.object(a,'backup',return_value=p/'saved'), patch.object(i,'render_compose',return_value='{}'), patch.object(i,'compose',side_effect=i.InstallError('unhealthy')), patch.object(a,'restore') as restore:
+                with self.assertRaises(i.InstallError):a.update(p,cfg,'php','php:8.4-fpm-alpine')
+                restore.assert_called_once_with(p,p/'saved',cfg,take_safety=False)
+                self.assertEqual(cfg['images']['php'],'php@sha256:'+'a'*64)
 
-    def test_failed_runtime_preserves_unchanged_state_for_resume(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'site'; a=args(path)
-            with patch.object(i,'validate_host'),patch.object(i,'check_disk'),patch.object(i.os,'geteuid',return_value=0),\
-                 patch.object(i,'docker_available',return_value=True),patch.object(i,'is_port_free',return_value=True),\
-                 patch.object(i,'image_digest',side_effect=lambda name: IMAGES['app'] if name == DIGEST else IMAGES[next(k for k,v in i.DEFAULT_IMAGES.items() if v==name)]),\
-                 patch.object(i,'compose',side_effect=i.InstallError('simulated failed startup')),\
-                 patch('admin.initialize_public'):
-                with self.assertRaises(i.InstallError): i.install(a)
-            self.assertTrue((path/'.env').exists())
-            self.assertFalse((path/'installed.json').exists())
-            secrets_before=(path/'.env').read_bytes()
-            with patch.object(i,'validate_host'),patch.object(i,'check_disk'),patch.object(i.os,'geteuid',return_value=0),\
-                 patch.object(i,'docker_available',return_value=True),patch.object(i,'compose',return_value='running'),\
-                 patch.object(i,'validate_runtime',return_value=None),patch('admin.initialize_public'):
-                i.install(a)
-            self.assertEqual(secrets_before,(path/'.env').read_bytes())
-            self.assertEqual(json.loads((path/'installed.json').read_text())['state'],'ready')
+    def test_contract(self):
+        root=Path(__file__).resolve().parents[1]
+        cfg=json.loads((root/'contracts/installer.v1.json').read_text())
+        self.assertEqual(cfg['services'],['php','db','redis','nginx (optional)'])
+        self.assertEqual(set(cfg['commands']),set(a.COMMANDS))
+        self.assertFalse(cfg['application_deployment'])
 
-    def test_unknown_state_cannot_be_overwritten(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'site';path.mkdir(); (path/'other-app.conf').write_text('critical')
-            with patch.object(i,'validate_host'),patch.object(i,'check_disk'),patch.object(i.os,'geteuid',return_value=0),\
-                 patch.object(i,'run',side_effect=AssertionError('Must not call docker')):
-                with self.assertRaises(i.InstallError):i.install(args(path))
-            self.assertEqual((path/'other-app.conf').read_text(),'critical')
-
-    def test_contract_values_match_implementation(self):
-        contract=json.loads((i.REPO/'contracts/installer.v1.json').read_text())
-        self.assertEqual(contract['supported_os'], {k: sorted(v) for k,v in i.SUPPORTED.items()})
-        self.assertEqual(contract['installer']['default_path'],'/opt/fluidweb')
-        self.assertEqual(contract['installer']['web_modes'],['nginx','external'])
-        self.assertFalse(contract['production_ready'])
-
-
-if __name__ == '__main__': unittest.main()
+if __name__=='__main__':unittest.main()

@@ -1,28 +1,18 @@
-# EXAMPLE ONLY: operator enables proxy, proxy_fcgi and rewrite; manages DNS/TLS.
+# Operator example: enable proxy/proxy_fcgi; configure DNS/HTTPS yourself.
 <VirtualHost *:80>
     ServerName example.com
     DocumentRoot /opt/fluidweb/data/public
+    DirectoryIndex index.php
     <Directory /opt/fluidweb/data/public>
         Require all granted
         AllowOverride None
-        Options -Indexes -MultiViews +SymLinksIfOwnerMatch
-        RewriteEngine On
-        RewriteRule ^health$ health.php [L]
-        RewriteCond %{REQUEST_FILENAME} !-f
-        RewriteRule ^ index.php [L]
-        <FilesMatch "^(index|health)\.php$">
+        Options -Indexes -FollowSymLinks
+        <FilesMatch "\.php$">
             SetHandler "proxy:fcgi://127.0.0.1:9080"
-        </FilesMatch>
-        <FilesMatch "^(?!(index|health)\.php$).*\.php$">
-            Require all denied
-        </FilesMatch>
-        <FilesMatch "^\.">
-            Require all denied
         </FilesMatch>
     </Directory>
     <LocationMatch "(^|/)\.">
         Require all denied
     </LocationMatch>
-    # Translate the host document root into the container's script path.
     ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "/var/www/html/public%{reqenv:SCRIPT_NAME}"
 </VirtualHost>
