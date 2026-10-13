@@ -16,11 +16,10 @@ The wizard asks for:
 
 - Nginx in Docker
 - Optional **SSL (Let's Encrypt)**. If checked, the wizard asks for a domain that resolves to the server's public IPv4 address. Inbound **TCP 80 and 443** must be reachable from the internet for certificate issuance; DNS resolution by itself is not proof of correct routing.
-- Public HTTP port (default **80**, customizable *only when SSL is disabled*)
 - Installation directory (default `/opt/fluidweb`)
 - Final confirmation before modifying the host
 
-Nginx binds explicitly to **`0.0.0.0:80`** (or the selected public port). With SSL enabled, it also binds **`0.0.0.0:443`**. These are **public interface** bindings, not `127.0.0.1`. Host/firewall/provider firewall settings must still permit traffic.
+Nginx binds explicitly to **`0.0.0.0:80`**. With SSL enabled, it also binds **`0.0.0.0:443`**. These are **public interface** bindings, not `127.0.0.1`. Host/firewall/provider firewall settings must still permit traffic.
 
 The installer checks for root, Ubuntu/Debian, port conflicts, existing files, Docker Engine and Compose. If Docker is missing, it requests permission before using Docker's official convenience installation script. It does not stop other Docker applications.
 
@@ -36,7 +35,9 @@ The installer creates a new installation at `/opt/fluidweb` by default. An exist
 
 A minimal `public/index.php` returns `Installer v2: PHP-FPM OK` to verify Nginx → PHP-FPM connectivity. **This is an infrastructure check, not a deployed application.** PostgreSQL and Redis have no public ports. PostgreSQL data lives in a Docker-managed **named volume** (postgres_data within the installation's Compose project); Redis still uses data/redis/ in the installation directory. These persist when containers are recreated. Do not run docker compose down -v or docker volume prune if you want to retain the database. PHP database/Redis extensions for a future application are not configured yet.
 
-Rerunning the wizard with the **same** directory, port, domain and SSL option preserves passwords and data, repairs the PostgreSQL 18 Alpine bind-mount directory ownership when it is root-owned, and starts/verifies the services again. No recursive ownership changes or data deletion are performed. It refuses an unrecognized non-empty installation directory. To add SSL to an existing HTTP installation on **public port 80**, rerun the wizard, check SSL and enter the same installation directory; it preserves the database and credentials. Older failed installations using an **empty** PostgreSQL bind mount are switched automatically to a named volume on rerun; if the old mount contains data, the installer stops without altering it. SSL activation is tested with a simulated Docker backend; a real Let's Encrypt issuance is still to be tested on a VPS.
+Rerunning the wizard with the **same** directory, domain and SSL option preserves passwords, data, the Compose project name and existing image selections, and starts/verifies the services again. It refuses an unrecognized non-empty installation directory. To add SSL to an existing HTTP installation on **public port 80**, rerun the wizard, check SSL and enter the same installation directory; it preserves the database and credentials. Legacy PostgreSQL bind mounts, even empty ones, are refused before changing any settings; no automatic migration or data deletion is performed. Existing deployments on a different HTTP port are left untouched and cannot be reconfigured by this wizard.
+
+PostgreSQL 18 uses `postgres_data:/var/lib/postgresql`, with the version-specific data directory managed by the [official PostgreSQL image](https://hub.docker.com/_/postgres). Redis uses append-only persistence under `/data`, as described in the [official Redis image documentation](https://hub.docker.com/_/redis). Certbot uses a `tools` Compose profile and runs only for certificate issuance or renewal with SSL enabled.
 
 ## Management
 
@@ -54,6 +55,8 @@ Replace `/opt/fluidweb` with your chosen directory.
 
 **SSL checkbox:** highlight "Enable SSL", press **Space** so `[x]` appears, then select **Continue**. The domain prompt appears only when SSL is enabled. Certificate issuance runs **after PostgreSQL, Redis, PHP-FPM and Nginx are healthy**. If the summary shows `SSL: off`, Let's Encrypt will not run.
 
+Invalid domains and DNS failures stay on the domain screen with the exact error displayed. Enter another domain to retry, or `q` / **Esc then Enter** to go back. The SSL checkbox stays selected.
+
 **SSL renewal is not yet automatic.** Until renewal scheduling is added, periodically run:
 
 ```bash
@@ -64,4 +67,6 @@ This renews eligible Let's Encrypt certificates and reloads Nginx. Do not leave 
 
 ## Testing status
 
-Bash syntax, interactive menu navigation, checkbox behavior, generated Compose/Nginx configurations, and HTTP/SSL installation paths have been checked locally **using simulated Docker commands**. Rerunning an installation was checked for preservation of credentials. Real Docker installation and real Let's Encrypt certificate issuance must still be tested on a suitable VPS.
+Bash syntax and real `docker compose config` validation passed for HTTP and SSL. Scripted menu checks cover both terminal input modes, domain validation/DNS retries, explicit back, SSL checkbox retention, directory selection and confirmation. Simulated host operations cover HTTP/SSL reruns, credential preservation, port conflicts and refusal of empty or populated legacy PostgreSQL bind mounts.
+
+An isolated real Docker stack using the requested images passed Nginx/PHP HTTP checks, PostgreSQL 18 named-volume checks, and PostgreSQL/Redis persistence after container recreation. HTTP-to-SSL activation passed with a temporary test certificate, including HTTPS responses, HTTP redirects and unchanged credentials/data. The official Certbot image ran successfully. Runtime tests used temporary loopback ports because an existing stack occupied public port 80; production public 80/443 bindings were checked through Compose configuration. Docker bootstrap installation and real Let's Encrypt issuance/renewal remain untested on a suitable public VPS.

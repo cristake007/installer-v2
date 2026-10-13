@@ -104,26 +104,23 @@ nginx_options() {
 }
 
 ask_domain() {
-  header 'SSL DOMAIN'
-  printf '  Domain pointing to this server (example: app.example.com):\n  > '
-  IFS= read -r DOMAIN || return 1
-  DOMAIN=${DOMAIN,,}
-  [[ $DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || { message 'Invalid domain.'; return 1; }
-  if ! getent ahostsv4 "$DOMAIN" >/dev/null; then
-    message "The domain $DOMAIN has no resolvable IPv4 address. Configure DNS first."
-    return 1
-  fi
-  return 0
-}
-
-ask_port() {
-  header 'PUBLIC HTTP PORT'
-  printf '  Port exposed publicly on 0.0.0.0 [80]: '
-  local value
-  IFS= read -r value || return 1
-  HTTP_PORT=${value:-80}
-  [[ $HTTP_PORT =~ ^[0-9]+$ ]] && (( 10#$HTTP_PORT >= 1 && 10#$HTTP_PORT <= 65535 )) || { message 'Invalid port.'; return 1; }
-  HTTP_PORT=$((10#$HTTP_PORT))
+  local error=''
+  while :; do
+    header 'SSL DOMAIN'
+    [[ -z $error ]] || printf '  ERROR: %s\n\n' "$error"
+    printf '  Domain pointing to this server (example: app.example.com):\n'
+    printf '  Enter a domain to retry, or q / Esc then Enter to go back.\n  > '
+    IFS= read -r DOMAIN || return 1
+    DOMAIN=${DOMAIN,,}
+    case "$DOMAIN" in q|$'\033') return 1;; esac
+    if [[ ! $DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
+      error='Invalid domain.'
+    elif ! getent ahostsv4 "$DOMAIN" >/dev/null; then
+      error="The domain $DOMAIN has no resolvable IPv4 address. Configure DNS first."
+    else
+      return 0
+    fi
+  done
 }
 
 ask_dir() {
@@ -182,10 +179,12 @@ ensure_docker() {
 port_busy() { [[ -n $(ss -H -ltn "sport = :$1") ]]; }
 
 validate_dir_and_ports() {
+  HTTP_TO_SSL=0
   if [[ -e "$DIR" && ! -d "$DIR" ]]; then fail "$DIR exists but is not a directory."; fi
   if [[ -L "$DIR" ]]; then fail 'Installation path must not be a symlink.'; fi
   if [[ -f "$DIR/.installer-settings" ]]; then
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
+    ensure_postgres_volume
     # Compare literal settings; never execute configuration content as root.
     if grep -Fxq "SAVED_HTTP_PORT=$HTTP_PORT" "$DIR/.installer-settings" &&
        grep -Fxq "SAVED_SSL=$SSL_ENABLED" "$DIR/.installer-settings" &&
@@ -205,7 +204,7 @@ validate_dir_and_ports() {
     if [[ -d "$DIR" && -n $(find "$DIR" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
       fail "$DIR is not empty and is not an installer-v2 installation."
     fi
-    if port_busy "$HTTP_PORT"; then fail "Public port $HTTP_PORT is already in use. Pick another port (SSL requires port 80)."; fi
+    if port_busy "$HTTP_PORT"; then fail "Public port $HTTP_PORT is already in use. Free it before installing."; fi
     if (( SSL_ENABLED )) && port_busy 443; then fail 'Public HTTPS port 443 is already in use.'; fi
   fi
 }
@@ -224,17 +223,10 @@ enable_ssl_on_existing_http() {
 
 dc() { docker compose --project-directory "$DIR" --env-file "$DIR/.env" -f "$DIR/compose.yaml" "$@"; }
 
-# Docker-managed volumes avoid host directory ownership conflicts.
-# Only convert the failed legacy bind mount when it contains no files.
+# Leave legacy PostgreSQL storage untouched, even when empty.
 ensure_postgres_volume() {
   if grep -Fxq '      - ./data/postgres:/var/lib/postgresql' "$DIR/compose.yaml"; then
-    if [[ -d "$DIR/data/postgres" ]] && [[ -n $(find "$DIR/data/postgres" -mindepth 1 -print -quit) ]]; then
-      fail 'Existing PostgreSQL bind mount contains data. Not migrating automatically; original data is untouched.'
-    fi
-    grep -q '^volumes:$' "$DIR/compose.yaml" && fail 'Unexpected Compose volume configuration; no changes made.'
-    sed -i 's|^      - ./data/postgres:/var/lib/postgresql$|      - postgres_data:/var/lib/postgresql|' "$DIR/compose.yaml"
-    printf '\nvolumes:\n  postgres_data:\n' >> "$DIR/compose.yaml"
-    message 'PostgreSQL storage updated to a Docker-managed persistent volume.'
+    fail 'Existing installation uses a legacy PostgreSQL bind mount. No automatic migration was performed; data and settings are untouched.'
   fi
 }
 
@@ -378,7 +370,6 @@ run_installation() {
   ensure_docker
   if [[ ! -f "$DIR/.installer-settings" ]]; then write_new_installation; fi
   if (( HTTP_TO_SSL )); then enable_ssl_on_existing_http; fi
-  ensure_postgres_volume
   message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
   dc up -d
   if (( SSL_ENABLED )) && [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]]; then
@@ -425,7 +416,8 @@ main() {
           header 'EXTERNAL SERVER'; message 'This option will be implemented after Nginx mode.'; continue
         fi
         nginx_options || continue
-        if (( SSL_ENABLED )); then HTTP_PORT=80; ask_domain || continue; else DOMAIN=''; ask_port || continue; fi
+        HTTP_PORT=80
+        if (( SSL_ENABLED )); then ask_domain || continue; else DOMAIN=''; fi
         ask_dir || continue
         confirm || continue
         run_installation

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run from the installed /opt/infra-stack directory.
+# Run from the installed /opt/fluidweb directory (or your chosen directory).
 set -euo pipefail
 DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || { echo 'No installation found.' >&2; exit 1; }
