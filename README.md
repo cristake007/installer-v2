@@ -70,7 +70,55 @@ sudo /opt/fluidweb/command.sh start
 sudo /opt/fluidweb/command.sh restart
 ```
 
-Replace `/opt/fluidweb` with your chosen directory. Upgrade, backup, restore and clean-slate commands are outside this task.
+Replace `/opt/fluidweb` with your chosen directory. Upgrade and clean-slate commands are outside this task.
+
+## Backup and restore
+
+Install the updated management script into an existing deployment without running the installer again:
+
+```bash
+# From the installer-v2 repository on feat/installer-core:
+sudo install -m 700 command.sh /opt/fluidweb/command.sh
+```
+
+This replaces only the management script. It does not restart the application, change configuration or reset data. Copy it while no management command is running.
+
+```bash
+sudo /opt/fluidweb/command.sh backup
+sudo /opt/fluidweb/command.sh restore /opt/fluidweb-backups/fluidweb-TIMESTAMP-ID.tar.gz
+```
+
+Backups go to the directory alongside the installation, `${installation_directory}-backups` (normally `/opt/fluidweb-backups`). The directory has mode 700 and archives have mode 600. Each timestamped archive contains a PostgreSQL custom-format logical dump, all `data` directories (including Redis, application files, uploads, custom files and sessions), public files, configuration, secrets, Compose settings, the pinned FluidWeb image reference and `command.sh`. Docker-managed certificates and Certbot renewal configuration are included when present. Certbot's relative certificate links are preserved.
+
+Start the installation before backing it up. Backup briefly stops Docker Nginx, PHP-FPM and Redis, then takes the database dump and copies the stopped services' files. PostgreSQL remains running; its physical data directory is never archived. Redis shuts down cleanly to flush its append-only data. Services restart and are verified before success is reported. A failure attempts to restart the paused services. Do not write directly to PostgreSQL/Redis or edit installation files during a backup. Free disk space must accommodate the temporary copy and compressed archive. Internal custom symbolic links are copied as their contents; links outside the installation and special files are refused.
+
+Restore validates gzip/archive structure, file checksums, certificate links, the full PostgreSQL dump, original directory, project identity, mode and Compose configuration before touching installation data. It checks that the pinned application image is available. Type **RESTORE** at the confirmation prompt to replace this instance's data and configuration. The restored database role password comes from the backed-up environment. Restore starts the services, checks Symfony and database/Redis readiness, and checks the application's login page through Docker Nginx. It leaves the application running.
+
+A restore removes this project's containers and recreates them while retaining its PostgreSQL named volume; it replaces the application's database using the logical dump. Existing tables and files added after the backup are removed. It never removes unrelated containers or volumes and never runs a prune command. Concurrent mutations through `command.sh` are rejected; status and logs remain available.
+
+Restore requires the original installation directory and, for an existing deployment, the same Compose project and web-server mode. It does not relocate external FastCGI paths or convert modes. In external mode, application readiness is verified inside the containers; host web-server configuration and host-managed certificates are outside this backup. Restore the host server separately using the saved example configurations.
+
+To recover on a replacement host, prepare Docker Engine, Compose and the usual command-line utilities, create the **original directory**, and install this `command.sh` there. The directory must contain only `command.sh`:
+
+```bash
+sudo mkdir -p /opt/fluidweb
+sudo install -m 700 command.sh /opt/fluidweb/command.sh
+sudo /opt/fluidweb/command.sh restore /path/to/backup.tar.gz
+```
+
+Only restore trusted backups: checksums detect damage, but do not authenticate an archive containing Compose configuration and secrets. Keep a copy off the VPS yourself. An expired SSL certificate can be recovered, but HTTPS verification will fail until it is renewed. If restore fails after replacement starts, services may remain stopped; inspect the error and logs, fix the cause, and retry the same validated backup. There is no automatic rollback or database-major-version migration.
+
+### Backup/restore verification
+
+Executed on the disposable VPS on 2026-10-13 with Docker Nginx over HTTP:
+
+- Created identifiable PostgreSQL, Redis and application/custom file values and a backup; changed those values, sessions, database password, application secret, image-reference setting and configuration; restored the backup and verified the original values and configuration hashes.
+- Verified removal of a table, Redis key and file created after the backup, plus restoration of session contents and certificate files with their relative links. Certificate tests used self-signed test files; no public SSL issuance was tested.
+- Verified successful Symfony/schema/cache startup, database authentication, Redis connectivity and the actual FluidWeb login page (HTTP 200).
+- Verified unrelated container IDs/states and every pre-existing volume name/label remained unchanged.
+- Corrupt gzip, checksum mismatch, declined confirmation and concurrent management commands were rejected before replacing installation data.
+
+External-mode backup/restore, replacement-host recovery, interrupted restores and expired/real Let's Encrypt certificates have not had end-to-end runtime tests. Generated external Compose configuration still passes the existing configuration check.
 
 ## Validation for this change
 
@@ -85,8 +133,8 @@ Executed on 2026-10-13:
 - Bash syntax and real `docker compose config -q` for HTTP, SSL and external mode, including an external path with spaces.
 - Generated settings preservation during rerun validation; refusal of infrastructure-only installations, mode changes and legacy PostgreSQL bind mounts.
 - Docker Nginx SSL configuration syntax with a temporary self-signed certificate; external Nginx and Apache configuration syntax in isolated containers, without binding host ports. These checks do not establish application HTTP execution or Let's Encrypt issuance.
-- The actual fresh-install wizard was run against a new directory; the image pull returned `unauthorized` for `ghcr.io/cristake007/fluidweb:dev`. The wizard exited with an explicit error and created no installation files. This prevents an actual fresh application deployment in this environment.
+- After the package was made public, a real fresh HTTP installation at `/opt/fluidweb` passed: service startup, Symfony bootstrap, application/setup HTTP responses, database and Redis connectivity, container-recreation persistence and installer reruns. Credentials, configuration, application files and sessions survived recreation. Unrelated containers remained unchanged.
 
-**Not executed:** actual FluidWeb startup, application database/Redis connectivity, HTTP responses through either web server, container-recreation persistence or full runtime installer reruns. These require pull access to the published image. After access is available, verify `/setup`, database schema, Redis PING from `php`, and records/files/sessions after recreating the installation containers. Test both external templates with host-managed web servers on a suitable VPS. Clean-host Docker bootstrap and public Let's Encrypt issuance/renewal also require VPS verification; automated checks do not need a public domain or real certificate issuance.
+**Not executed:** external host web-server runtime tests, clean-host Docker bootstrap, or public Let's Encrypt issuance/renewal. Automated checks used localhost and self-signed certificate files, without requiring a public domain. Backup/restore results and limitations are listed above.
 
 Source inspected: FluidWeb commit `61826ed8f1e00f4c7aa6e5898f5cf150c2a3583f`, including its production Dockerfile, entrypoint, production Compose template, application configuration and setup controller. The FluidWeb repository was not modified.
