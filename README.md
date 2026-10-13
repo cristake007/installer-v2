@@ -1,57 +1,66 @@
-# Installer v2
+# FluidWeb installer
 
-Simple **Bash-only** infrastructure installer for Ubuntu and Debian. No Python, `whiptail`, application image or external application repository is needed.
-
-Choose **Nginx in Docker** or **External web server** (host-managed Nginx or Apache).
-
-## Install
+Bash + Docker Compose installer for the actual FluidWeb application on Ubuntu and Debian. FluidWeb is the only supported application. No application checkout, Composer installation, new Symfony project or locally built application image is needed.
 
 ```bash
 sudo bash install.sh
 ```
 
-Use **Up/Down** to navigate, **Enter** to select, **Space** to toggle the SSL checkbox and **Esc** to go back. When running without a TTY, numeric menus are available.
+Use Up/Down and Enter to navigate, Space to toggle SSL, and Esc to go back. Numeric menus are available without a TTY. The default installation directory is `/opt/fluidweb`.
 
-For Nginx in Docker, the wizard asks for:
+The installer requires root, checks ports and existing files, and checks Docker Engine and Compose. If Docker is missing, it asks before using Docker's official convenience installation script. It does not stop unrelated containers or change host web servers or firewall rules.
 
-- Nginx in Docker
-- Optional **SSL (Let's Encrypt)**. If checked, the wizard asks for a domain that resolves to the server's public IPv4 address. Inbound **TCP 80 and 443** must be reachable from the internet for certificate issuance; DNS resolution by itself is not proof of correct routing.
-- Installation directory (default `/opt/fluidweb`)
-- Final confirmation before modifying the host
+## Application and storage
 
-Nginx binds explicitly to **`0.0.0.0:80`**. With SSL enabled, it also binds **`0.0.0.0:443`**. These are **public interface** bindings, not `127.0.0.1`. Host/firewall/provider firewall settings must still permit traffic.
+Fresh installations pull the existing production image `ghcr.io/cristake007/fluidweb:dev` and save its resolved digest in `.env`. Reruns use that digest and preserve the generated `APP_SECRET`, database password and Compose project name. Authenticate Docker to GHCR with package read access if the image is private. A failed application pull stops before writing installation files; there is no test-page fallback.
 
-The installer checks for root, Ubuntu/Debian, port conflicts, existing files, Docker Engine and Compose. If Docker is missing, it requests permission before using Docker's official convenience installation script. It does not stop other Docker applications.
+The `php` service runs FluidWeb's production entrypoint, which publishes its public files, bootstraps the platform schema and clears/warms the Symfony cache before starting PHP-FPM. The installer supplies production environment settings, PostgreSQL variables and `DATABASE_URL`, and waits for the application's database and FPM health checks. Open `/setup` to create the first administrator using FluidWeb's own setup form.
 
-## Services
+Services:
 
-- PHP-FPM 8.4 (`php:8.4-fpm`)
-- PostgreSQL 18 (`postgres:18`)
-- Redis 8 (`redis:8`), append-only persistence
-- Nginx (`nginx:stable`, Docker Nginx mode only)
-- Certbot (`certbot/certbot:latest`, used **only** when SSL is selected)
+- FluidWeb production image, including PHP-FPM and its PostgreSQL driver.
+- PostgreSQL 18 (`postgres:18`), without published ports.
+- Redis 8 (`redis:8`), without published ports and with append-only persistence.
+- Nginx (`nginx:stable`), in Docker Nginx mode.
+- Certbot (`certbot/certbot:latest`), under the `tools` profile, only for SSL operations.
 
-The installer creates a new installation at `/opt/fluidweb` by default. An existing `/opt/infra-stack` deployment is **not** renamed or migrated automatically; stop it before a fresh test if its public HTTP/HTTPS ports are occupied.
+PostgreSQL uses `postgres_data:/var/lib/postgresql`, as required by PostgreSQL 18. Installation-local storage includes:
 
-A minimal `public/index.php` returns `Installer v2: PHP-FPM OK` to verify Nginx → PHP-FPM connectivity. **This is an infrastructure check, not a deployed application.** PostgreSQL and Redis have no public ports. PostgreSQL data lives in a Docker-managed **named volume** (postgres_data within the installation's Compose project); Redis still uses data/redis/ in the installation directory. These persist when containers are recreated. Do not run docker compose down -v or docker volume prune if you want to retain the database. PHP database/Redis extensions for a future application are not configured yet.
+- `data/redis`: Redis persistence.
+- `data/application`: application data, uploaded files and extensions.
+- `data/custom`: custom application metadata.
+- `data/var`: cache, logs and persistent PHP sessions.
+- `public`: image-owned public files shared with the web server. FluidWeb replaces these on startup; do not store custom persistent files here.
 
-Rerunning the wizard with the **same** directory, domain and SSL option preserves passwords, data, the Compose project name and existing image selections, and starts/verifies the services again. It refuses an unrecognized non-empty installation directory. To add SSL to an existing HTTP installation on **public port 80**, rerun the wizard, check SSL and enter the same installation directory; it preserves the database and credentials. Legacy PostgreSQL bind mounts, even empty ones, are refused before changing any settings; no automatic migration or data deletion is performed. Existing deployments on a different HTTP port are left untouched and cannot be reconfigured by this wizard.
+Do not run `docker compose down -v` or prune volumes if you want to retain the database. Secrets and application data remain outside the public document root.
 
-PostgreSQL 18 uses `postgres_data:/var/lib/postgresql`, with the version-specific data directory managed by the [official PostgreSQL image](https://hub.docker.com/_/postgres). Redis uses append-only persistence under `/data`, as described in the [official Redis image documentation](https://hub.docker.com/_/redis). Certbot uses a `tools` Compose profile and runs only for certificate issuance or renewal with SSL enabled.
+**Redis limitation:** the inspected FluidWeb production source has no Redis extension or Composer client and no Redis cache/session integration. The installer supplies `REDIS_URL` and verifies Redis PING from the application container using PHP streams. This proves network connectivity; it does not make FluidWeb use Redis. PHP sessions persist in `data/var/sessions`. Actual Redis-backed application features require a change in FluidWeb, which this installer task does not make.
 
-## External web server mode
+## Nginx in Docker and SSL
 
-Select **External web server**, choose the installation directory (default `/opt/fluidweb`) and a local PHP-FPM port (default `9000`). Occupied ports can be retried with another port. This mode installs only `postgres:18`, `redis:8` and `php:8.4-fpm`; PHP-FPM binds exclusively to `127.0.0.1`. PostgreSQL and Redis storage and credentials persist across reruns. Rerun with the same directory and PHP-FPM port; existing files and example configurations are preserved. Switching modes in an existing directory is refused, including older Docker Nginx installations without a mode marker.
+Docker Nginx binds publicly to `0.0.0.0:80`. The SSL checkbox adds public port 443 and prompts for a domain resolving to the server. Inbound TCP 80 and 443 must be reachable for Let's Encrypt issuance. DNS resolution alone does not prove routing.
 
-Example virtual hosts are generated at `config/nginx-external.conf` and `config/apache-external.conf`. Copy the appropriate example into your host web server configuration yourself, set its server name and manage SSL independently. Apache requires `proxy` and `proxy_fcgi`. The installer does not install, inspect or control your host web server. The examples follow the [Nginx FastCGI documentation](https://nginx.org/en/docs/http/ngx_http_fastcgi_module.html) and [Apache proxy_fcgi documentation](https://httpd.apache.org/docs/2.4/mod/mod_proxy_fcgi.html).
+The existing Nginx configuration and Certbot webroot flow are retained. Certificate issuance starts after FluidWeb and its HTTP login/setup page are verified. HTTPS verification requests the real application login/setup page. A failed issuance leaves HTTP running and permits retrying the domain.
 
-Both examples serve only the installation's `public` directory. PHP-FPM mounts that directory at the **same absolute path** inside its container, so FastCGI script filenames match host paths. The installation directory permits traversal, public files are readable, and credentials, configuration and data remain private. Custom parent directories must permit traversal by the host web server; the installer refuses inaccessible parents without changing their permissions. External paths may contain letters, numbers, spaces, dots, slashes, hyphens and underscores.
+Rerunning with the same directory and options preserves configuration, credentials and storage. Enabling SSL on an existing FluidWeb HTTP installation on public port 80 is supported. Different ports/domains, mode conversion, infrastructure-only test-page installations and legacy PostgreSQL bind mounts are refused without converting or deleting data. Clear previous test deployments yourself before a fresh installation.
 
-Use the same `command.sh` commands below for external mode. Certificate renewal through `command.sh` is unavailable in this mode because SSL is host-managed.
+Certificate renewal is not automatic. Periodically run:
+
+```bash
+sudo /opt/fluidweb/command.sh renew-cert
+```
+
+## External Nginx or Apache
+
+Select External web server and choose a local PHP-FPM port (default 9000). The installer publishes FPM exclusively on `127.0.0.1` and runs only FluidWeb, PostgreSQL and Redis.
+
+Examples are generated at `config/nginx-external.conf` and `config/apache-external.conf`. Copy the appropriate example to your host configuration, set its server name and manage SSL yourself. Apache requires `proxy` and `proxy_fcgi`; its template includes `FallbackResource /index.php` for Symfony routes. The installer does not install or control a host web server.
+
+Both templates retain the installation's absolute `public` path. Inside the application container, a path link maps that location to `/var/www/html/public`, then invokes FluidWeb's original entrypoint. This keeps FastCGI filenames valid without moving or duplicating the application. Custom parent directories must permit traversal by the host web server. External paths may contain letters, numbers, spaces, dots, slashes, hyphens and underscores.
+
+Reruns preserve the selected FPM port and generated examples. External HTTP requests require your configured host web server and are not verified by the installer.
 
 ## Management
-
-After installation:
 
 ```bash
 sudo /opt/fluidweb/command.sh status
@@ -61,24 +70,23 @@ sudo /opt/fluidweb/command.sh start
 sudo /opt/fluidweb/command.sh restart
 ```
 
-Replace `/opt/fluidweb` with your chosen directory.
+Replace `/opt/fluidweb` with your chosen directory. Upgrade, backup, restore and clean-slate commands are outside this task.
 
-**SSL checkbox:** highlight "Enable SSL", press **Space** so `[x]` appears, then select **Continue**. The domain prompt appears only when SSL is enabled. Certificate issuance runs **after PostgreSQL, Redis, PHP-FPM and Nginx are healthy**. If the summary shows `SSL: off`, Let's Encrypt will not run.
+## Validation for this change
 
-Invalid domains and DNS failures stay on the domain screen with the exact error displayed. Enter another domain to retry, or `q` / **Esc then Enter** to go back. The SSL checkbox stays selected.
-
-**SSL renewal is not yet automatic.** Until renewal scheduling is added, periodically run:
+Run the small configuration check with an existing Docker Compose plugin:
 
 ```bash
-sudo /opt/fluidweb/command.sh renew-cert
+bash tests/config.sh
 ```
 
-This renews eligible Let's Encrypt certificates and reloads Nginx. Do not leave certificate renewal unattended in a long-running production installation.
+Executed on 2026-10-13:
 
-## Testing status
+- Bash syntax and real `docker compose config -q` for HTTP, SSL and external mode, including an external path with spaces.
+- Generated settings preservation during rerun validation; refusal of infrastructure-only installations, mode changes and legacy PostgreSQL bind mounts.
+- Docker Nginx SSL configuration syntax with a temporary self-signed certificate; external Nginx and Apache configuration syntax in isolated containers, without binding host ports. These checks do not establish application HTTP execution or Let's Encrypt issuance.
+- The actual fresh-install wizard was run against a new directory; the image pull returned `unauthorized` for `ghcr.io/cristake007/fluidweb:dev`. The wizard exited with an explicit error and created no installation files. This prevents an actual fresh application deployment in this environment.
 
-Bash syntax and real `docker compose config` validation passed for HTTP and SSL. Scripted menu checks cover both terminal input modes, domain validation/DNS retries, explicit back, SSL checkbox retention, directory selection and confirmation. Simulated host operations cover HTTP/SSL reruns, credential preservation, port conflicts and refusal of empty or populated legacy PostgreSQL bind mounts.
+**Not executed:** actual FluidWeb startup, application database/Redis connectivity, HTTP responses through either web server, container-recreation persistence or full runtime installer reruns. These require pull access to the published image. After access is available, verify `/setup`, database schema, Redis PING from `php`, and records/files/sessions after recreating the installation containers. Test both external templates with host-managed web servers on a suitable VPS. Clean-host Docker bootstrap and public Let's Encrypt issuance/renewal also require VPS verification; automated checks do not need a public domain or real certificate issuance.
 
-An isolated real Docker stack using the requested images passed Nginx/PHP HTTP checks, PostgreSQL 18 named-volume checks, and PostgreSQL/Redis persistence after container recreation. HTTP-to-SSL activation passed with a temporary test certificate, including HTTPS responses, HTTP redirects and unchanged credentials/data. The official Certbot image ran successfully. Runtime tests used temporary loopback ports because an existing stack occupied public port 80; production public 80/443 bindings were checked through Compose configuration. Docker bootstrap installation and real Let's Encrypt issuance/renewal remain untested on a suitable public VPS.
-
-External mode passed real Compose validation, startup and container-recreation persistence checks with exactly PostgreSQL, Redis and PHP-FPM, and a loopback-only published PHP-FPM port. Both generated virtual hosts passed syntax and PHP execution/path checks using isolated test web servers; public-file access, secret isolation, port retries, mode guards and `command.sh` administration were checked. No host-managed web server was inspected or changed.
+Source inspected: FluidWeb commit `61826ed8f1e00f4c7aa6e5898f5cf150c2a3583f`, including its production Dockerfile, entrypoint, production Compose template, application configuration and setup controller. The FluidWeb repository was not modified.

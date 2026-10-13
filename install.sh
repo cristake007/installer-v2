@@ -5,6 +5,7 @@ set -euo pipefail
 DIR='/opt/fluidweb'
 INSTALL_MODE=nginx
 FPM_PORT=9000
+FLUIDWEB_IMAGE=ghcr.io/cristake007/fluidweb:dev
 HTTP_PORT=80
 SSL_ENABLED=0
 HTTP_TO_SSL=0
@@ -25,7 +26,7 @@ trap 'exit 143' TERM
 
 header() {
   (( TTY )) && printf '\033[2J\033[H\033[?25l' || printf '\n'
-  printf '%s  INSTALLER V2%s  %sDocker infrastructure%s\n' "$BLUE" "$RESET" "$DIM" "$RESET"
+  printf '%s  INSTALLER V2%s  %sFluidWeb application%s\n' "$BLUE" "$RESET" "$DIM" "$RESET"
   printf '  --------------------------------------------------------\n'
   printf '\n  %s\n\n' "$1"
 }
@@ -194,6 +195,7 @@ validate_dir_and_ports() {
   if [[ -f "$DIR/.installer-settings" ]]; then
     grep -Fxq 'SAVED_MODE=external' "$DIR/.installer-settings" && fail 'This directory contains an external web server installation. Installation modes cannot be converted automatically.'
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
+    ensure_fluidweb_installation
     ensure_postgres_volume
     saved_domain=$(sed -n 's/^SAVED_DOMAIN=//p' "$DIR/.installer-settings")
     # Compare literal settings; never execute configuration content as root.
@@ -258,6 +260,10 @@ run_external_installation() {
   local SSL_ENABLED=0 parent permissions
   preflight
   [[ $DIR =~ ^/[a-zA-Z0-9_./\ -]+$ ]] || fail 'External mode requires a directory path using letters, numbers, spaces, dots, slashes, hyphens or underscores.'
+  case "$DIR/" in
+    /var/www/html/public/*|/opt/fluidweb-public/*)
+      fail 'External installation path overlaps the production image public tree. Choose another directory.';;
+  esac
   [[ ! -L $DIR ]] || fail 'Installation path must not be a symlink.'
   [[ ! -e $DIR || -d $DIR ]] || fail "$DIR exists but is not a directory."
   parent=${DIR%/*}
@@ -271,6 +277,8 @@ run_external_installation() {
   if [[ -f "$DIR/.installer-settings" ]]; then
     grep -Fxq 'SAVED_MODE=external' "$DIR/.installer-settings" || fail 'This directory contains a Nginx-in-Docker installation. Installation modes cannot be converted automatically.'
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
+    ensure_fluidweb_installation
+    ensure_postgres_volume
     grep -Fxq "SAVED_FPM_PORT=$FPM_PORT" "$DIR/.installer-settings" || fail 'Existing installation uses a different PHP-FPM port. Data and settings were not changed.'
     message 'Existing external installation found. Data, passwords and examples will be preserved.'
   else
@@ -278,12 +286,16 @@ run_external_installation() {
     port_busy "$FPM_PORT" && fail "Local port $FPM_PORT is already in use. Rerun and choose another port."
   fi
   ensure_docker
-  if [[ ! -f "$DIR/.installer-settings" ]]; then write_external_installation; fi
+  if [[ ! -f "$DIR/.installer-settings" ]]; then
+    prepare_application_image
+    write_external_installation
+  fi
   dc config -q
-  dc up -d --wait --wait-timeout 120
+  dc up -d --wait --wait-timeout 240
+  verify_application
   dc exec -T postgres pg_isready -U installer -d installer >/dev/null || fail 'PostgreSQL did not pass the readiness check.'
   [[ $(dc exec -T redis redis-cli ping | tr -d '\r') == PONG ]] || fail 'Redis did not respond to PING.'
-  printf '\n  External infrastructure verified.\n  PHP-FPM: 127.0.0.1:%s\n' "$FPM_PORT"
+  printf '\n  FluidWeb application verified.\n  PHP-FPM: 127.0.0.1:%s\n' "$FPM_PORT"
   printf '  Public files: %s/public\n  Examples: %s/config/nginx-external.conf and apache-external.conf\n' "$DIR" "$DIR"
   message 'Configure your host web server and SSL independently. No host web server was installed or changed.'
 }
@@ -298,13 +310,9 @@ write_external_installation() {
   password=$(openssl rand -hex 24)
   project="fluidweb_$(openssl rand -hex 5)"
   printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nFPM_PORT=%s\n' "$project" "$password" "$FPM_PORT" > "$DIR/.env"
+  write_application_environment
   printf 'SAVED_MODE=external\nSAVED_FPM_PORT=%s\nSAVED_SSL=0\nSAVED_DOMAIN=\n' "$FPM_PORT" > "$DIR/.installer-settings"
-  cat > "$DIR/public/index.php" <<'PHP'
-<?php
-header('Content-Type: text/plain; charset=utf-8');
-echo "Installer v2: PHP-FPM OK\n";
-PHP
-  chmod 644 "$DIR/public/index.php"
+
   cat > "$DIR/compose.yaml" <<YAML
 services:
   postgres:
@@ -333,14 +341,37 @@ services:
       timeout: 3s
       retries: 20
   php:
-    image: php:8.4-fpm
+    image: \${FLUIDWEB_IMAGE}
     restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: '0'
+      APP_SECRET: \${APP_SECRET}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: installer
+      POSTGRES_USER: installer
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+      DATABASE_URL: 'postgresql://installer:\${POSTGRES_PASSWORD}@postgres:5432/installer?serverVersion=18&charset=utf8'
+      REDIS_URL: 'redis://redis:6379'
+
     ports:
       - '127.0.0.1:\${FPM_PORT}:9000'
     volumes:
-      - '$DIR/public:$DIR/public:ro'
+      - ./public:/var/www/html/public
+      - ./data/application:/var/www/html/data
+      - ./data/custom:/var/www/html/custom
+      - ./data/var:/var/www/html/var
+      - ./config/sessions.ini:/usr/local/etc/php/conf.d/zz-fluidweb-sessions.ini:ro
+    # Keep host-template script filenames valid while using the image's own
+    # application path and unmodified bootstrap entrypoint.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - 'if [ "$DIR/public" != /var/www/html/public ]; then mkdir -p "$DIR"; ln -sfn /var/www/html/public "$DIR/public"; fi; exec /usr/local/bin/fluidweb-entrypoint php-fpm'
+    command: []
     healthcheck:
-      test: ['CMD', 'php', '-r', 'exit(@fsockopen("127.0.0.1", 9000) ? 0 : 1);']
+      test: ['CMD', 'php', '-r', 'require "public/health.php"; exit(@fsockopen("127.0.0.1", 9000) ? 0 : 1);']
+      start_period: 30s
       interval: 5s
       timeout: 3s
       retries: 20
@@ -382,6 +413,42 @@ ensure_postgres_volume() {
   fi
 }
 
+# Resolve the published image before writing an installation. Never build a
+# substitute application or fall back to the old PHP test page.
+prepare_application_image() {
+  docker pull "$FLUIDWEB_IMAGE" || fail "Cannot pull $FLUIDWEB_IMAGE. Authenticate Docker to GHCR with package read access, then rerun. No installation files were written."
+  FLUIDWEB_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$FLUIDWEB_IMAGE")
+  [[ $FLUIDWEB_IMAGE == ghcr.io/cristake007/fluidweb@sha256:* ]] || fail 'FluidWeb image has no repository digest.'
+}
+
+write_application_environment() {
+  printf 'FLUIDWEB_IMAGE=%s\nAPP_SECRET=%s\n' "$FLUIDWEB_IMAGE" "$(openssl rand -hex 32)" >> "$DIR/.env"
+  mkdir -p "$DIR/data/"{application,custom,var/sessions}
+  printf 'session.save_path=/var/www/html/var/sessions\n' > "$DIR/config/sessions.ini"
+  chmod 644 "$DIR/config/sessions.ini"
+}
+
+ensure_fluidweb_installation() {
+  grep -Eq '^FLUIDWEB_IMAGE=ghcr\.io/cristake007/fluidweb@sha256:[0-9a-f]{64}$' "$DIR/.env" &&
+    grep -Eq '^APP_SECRET=[0-9a-f]{64}$' "$DIR/.env" ||
+    fail 'This is an infrastructure-only or incomplete installation. Application conversion is outside this fresh-install task; existing files and data are untouched.'
+}
+
+verify_application() {
+  dc exec -T php php public/health.php || fail 'FluidWeb cannot connect to PostgreSQL.'
+  # The current image has no Redis extension/client. Check the real network
+  # connection using PHP streams without pretending FluidWeb uses Redis yet.
+  dc exec -T php php -r '
+    $socket = stream_socket_client("tcp://" . parse_url(getenv("REDIS_URL"), PHP_URL_HOST) . ":" . parse_url(getenv("REDIS_URL"), PHP_URL_PORT), $errno, $error, 5);
+    if (!$socket) exit(1);
+    stream_set_timeout($socket, 5);
+    fwrite($socket, "*1\r\n$4\r\nPING\r\n");
+    exit(trim(fgets($socket)) === "+PONG" ? 0 : 1);
+  ' || fail 'Application container cannot reach Redis.'
+  dc exec -T php php bin/console about --env=prod --no-interaction >/dev/null || fail 'FluidWeb Symfony kernel failed to boot.'
+  message 'FluidWeb database and Redis network connectivity verified. FluidWeb does not currently consume Redis.'
+}
+
 write_new_installation() {
   umask 077
   mkdir -p "$DIR"/{config,public,data/redis,certbot/conf,certbot/www}
@@ -391,13 +458,9 @@ write_new_installation() {
   password=$(openssl rand -hex 24)
   project="fluidweb_$(openssl rand -hex 5)"
   printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nHTTP_PORT=%s\n' "$project" "$password" "$HTTP_PORT" > "$DIR/.env"
+  write_application_environment
   printf 'SAVED_HTTP_PORT=%s\nSAVED_SSL=0\nSAVED_DOMAIN=\n' "$HTTP_PORT" > "$DIR/.installer-settings"
-  cat > "$DIR/public/index.php" <<'PHP'
-<?php
-header('Content-Type: text/plain; charset=utf-8');
-echo "Installer v2: PHP-FPM OK\n";
-PHP
-  chmod 644 "$DIR/public/index.php"
+
   cat > "$DIR/config/nginx.conf" <<'NGINX'
 server {
     listen 80;
@@ -441,10 +504,31 @@ services:
       timeout: 3s
       retries: 20
   php:
-    image: php:8.4-fpm
+    image: \${FLUIDWEB_IMAGE}
     restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: '0'
+      APP_SECRET: \${APP_SECRET}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: installer
+      POSTGRES_USER: installer
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+      DATABASE_URL: 'postgresql://installer:\${POSTGRES_PASSWORD}@postgres:5432/installer?serverVersion=18&charset=utf8'
+      REDIS_URL: 'redis://redis:6379'
+
     volumes:
-      - ./public:/var/www/html/public:ro
+      - ./public:/var/www/html/public
+      - ./data/application:/var/www/html/data
+      - ./data/custom:/var/www/html/custom
+      - ./data/var:/var/www/html/var
+      - ./config/sessions.ini:/usr/local/etc/php/conf.d/zz-fluidweb-sessions.ini:ro
+    healthcheck:
+      test: ['CMD', 'php', '-r', 'require "public/health.php"; exit(@fsockopen("127.0.0.1", 9000) ? 0 : 1);']
+      start_period: 30s
+      interval: 5s
+      timeout: 3s
+      retries: 20
     depends_on:
       postgres:
         condition: service_healthy
@@ -461,7 +545,8 @@ services:
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
-      - php
+      php:
+        condition: service_healthy
   certbot:
     image: certbot/certbot:latest
     profiles: ['tools']
@@ -480,7 +565,7 @@ YAML
 wait_http() {
   local url=$1 expected=$2 i body
   for ((i=0;i<40;i++)); do
-    body=$(curl -fsS --connect-timeout 2 --max-time 4 "$url" 2>/dev/null) || body=''
+    body=$(curl -fsSL --connect-timeout 2 --max-time 4 "$url" 2>/dev/null) || body=''
     [[ $body == *"$expected"* ]] && return 0
     sleep 2
   done
@@ -518,6 +603,7 @@ run_installation() {
   validate_dir_and_ports
   ensure_docker
   if [[ ! -f "$DIR/.installer-settings" ]]; then
+    prepare_application_image
     write_new_installation
     HTTP_TO_SSL=$SSL_ENABLED
   fi
@@ -525,10 +611,15 @@ run_installation() {
     printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=0\nSAVED_DOMAIN=\n' > "$DIR/.installer-settings"
     chmod 600 "$DIR/.installer-settings"
   fi
-  message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
-  dc up -d
+  message 'Starting FluidWeb, PostgreSQL, Redis and public Nginx...'
+  dc config -q
+  dc up -d --wait --wait-timeout 240
+  verify_application
+  if (( ! SSL_ENABLED || HTTP_TO_SSL )); then
+    wait_http "http://127.0.0.1:$HTTP_PORT/login" 'name="password"' || fail 'FluidWeb login/setup page did not become ready. Check application logs.'
+  fi
   if (( SSL_ENABLED )) && (( HTTP_TO_SSL )); then
-    wait_http "http://127.0.0.1:$HTTP_PORT/" 'Installer v2: PHP-FPM OK' || fail 'Nginx/PHP-FPM did not become ready. Check Docker logs.'
+    wait_http "http://127.0.0.1:$HTTP_PORT/health.php" '"database":"ok"' || fail 'Nginx/PHP-FPM did not become ready. Check Docker logs.'
     while [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ||
              ! -f "$DIR/certbot/conf/live/$DOMAIN/privkey.pem" ]]; do
       message "Requesting Let's Encrypt certificate for $DOMAIN (public port 80)..."
@@ -551,15 +642,15 @@ run_installation() {
     dc exec -T nginx nginx -s reload || fail 'Nginx reload failed.'
     local i body
     for ((i=0;i<20;i++)); do
-      body=$(curl -fsS --resolve "$DOMAIN:443:127.0.0.1" --connect-timeout 2 --max-time 4 "https://$DOMAIN/" 2>/dev/null) || body=''
-      [[ $body == *'Installer v2: PHP-FPM OK'* ]] && break
+      body=$(curl -fsSL --resolve "$DOMAIN:443:127.0.0.1" --connect-timeout 2 --max-time 4 "https://$DOMAIN/login" 2>/dev/null) || body=''
+      [[ $body == *'name="password"'* ]] && break
       sleep 2
     done
-    [[ $body == *'Installer v2: PHP-FPM OK'* ]] || fail 'HTTPS check failed. Inspect Nginx logs and certificate.'
+    [[ $body == *'name="password"'* ]] || fail 'HTTPS check failed. Inspect Nginx logs and certificate.'
     printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=1\nSAVED_DOMAIN=%s\n' "$DOMAIN" > "$DIR/.installer-settings"
     chmod 600 "$DIR/.installer-settings"
   else
-    wait_http "http://127.0.0.1:$HTTP_PORT/" 'Installer v2: PHP-FPM OK' || fail 'HTTP check failed. Inspect Nginx/PHP-FPM logs.'
+    wait_http "http://127.0.0.1:$HTTP_PORT/health.php" '"database":"ok"' || fail 'HTTP check failed. Inspect Nginx/PHP-FPM logs.'
   fi
   dc exec -T postgres pg_isready -U installer -d installer >/dev/null || fail 'PostgreSQL did not pass the readiness check.'
   [[ $(dc exec -T redis redis-cli ping | tr -d '\r') == PONG ]] || fail 'Redis did not respond to PING.'
@@ -571,6 +662,7 @@ run_installation() {
   else
     printf '  URL: http://SERVER_PUBLIC_IP:%s/ (public TCP %s)\n' "$HTTP_PORT" "$HTTP_PORT"
   fi
+  printf '  Open /setup to create the first administrator.\n'
   printf '  PostgreSQL and Redis have no public ports.\n'
 }
 
@@ -597,7 +689,7 @@ main() {
         confirm || continue
         run_installation
         break;;
-      1) header 'ABOUT'; message 'Bash-only installer for PHP-FPM, PostgreSQL, Redis and Nginx.';;
+      1) header 'ABOUT'; message 'Bash-only installer for FluidWeb, PostgreSQL 18, Redis 8 and Nginx.';;
       2) break;;
     esac
   done
