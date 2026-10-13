@@ -224,25 +224,23 @@ enable_ssl_on_existing_http() {
 
 dc() { docker compose --project-directory "$DIR" --env-file "$DIR/.env" -f "$DIR/compose.yaml" "$@"; }
 
-# PostgreSQL Alpine uses UID/GID 70. The original installer created a
-# root-owned 0700 bind mount, preventing PostgreSQL 18 from creating PGDATA.
-# Repair only the mount root, never recursively change database files.
-prepare_postgres_storage() {
-  local data_dir="$DIR/data/postgres"
-  [[ -d $data_dir && ! -L $data_dir ]] || fail 'PostgreSQL data directory is missing or invalid.'
-  local owner
-  owner=$(stat -c %u "$data_dir")
-  if [[ $owner == 0 ]]; then
-    chown 70:70 "$data_dir" || fail 'Cannot set PostgreSQL directory ownership.'
-  elif [[ $owner != 70 ]]; then
-    fail "PostgreSQL data directory has unexpected owner UID $owner; not changing existing data."
+# Docker-managed volumes avoid host directory ownership conflicts.
+# Only convert the failed legacy bind mount when it contains no files.
+ensure_postgres_volume() {
+  if grep -Fxq '      - ./data/postgres:/var/lib/postgresql' "$DIR/compose.yaml"; then
+    if [[ -d "$DIR/data/postgres" ]] && [[ -n $(find "$DIR/data/postgres" -mindepth 1 -print -quit) ]]; then
+      fail 'Existing PostgreSQL bind mount contains data. Not migrating automatically; original data is untouched.'
+    fi
+    grep -q '^volumes:$' "$DIR/compose.yaml" && fail 'Unexpected Compose volume configuration; no changes made.'
+    sed -i 's|^      - ./data/postgres:/var/lib/postgresql$|      - postgres_data:/var/lib/postgresql|' "$DIR/compose.yaml"
+    printf '\nvolumes:\n  postgres_data:\n' >> "$DIR/compose.yaml"
+    message 'PostgreSQL storage updated to a Docker-managed persistent volume.'
   fi
-  chmod 700 "$data_dir" || fail 'Cannot set PostgreSQL directory permissions.'
 }
 
 write_new_installation() {
   umask 077
-  mkdir -p "$DIR"/{config,public,data/postgres,data/redis,certbot/conf,certbot/www}
+  mkdir -p "$DIR"/{config,public,data/redis,certbot/conf,certbot/www}
   chmod 700 "$DIR" "$DIR/config" "$DIR/data" "$DIR/certbot/conf"
   chmod 755 "$DIR/public" "$DIR/certbot" "$DIR/certbot/www"
   local password project
@@ -283,7 +281,7 @@ services:
       POSTGRES_DB: installer
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
     volumes:
-      - ./data/postgres:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U installer -d installer']
       interval: 5s
@@ -329,6 +327,9 @@ $https_port
     volumes:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
+
+volumes:
+  postgres_data:
 YAML
   cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/command.sh" "$DIR/command.sh"
   chmod 700 "$DIR/command.sh"
@@ -377,7 +378,7 @@ run_installation() {
   ensure_docker
   if [[ ! -f "$DIR/.installer-settings" ]]; then write_new_installation; fi
   if (( HTTP_TO_SSL )); then enable_ssl_on_existing_http; fi
-  prepare_postgres_storage
+  ensure_postgres_volume
   message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
   dc up -d
   if (( SSL_ENABLED )) && [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]]; then
