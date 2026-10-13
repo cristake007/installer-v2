@@ -294,7 +294,7 @@ write_external_installation() {
   chmod 751 "$DIR"
   chmod 700 "$DIR/config" "$DIR/data"
   chmod 755 "$DIR/public"
-  local password project
+  local password project templates_dir web_server
   password=$(openssl rand -hex 24)
   project="fluidweb_$(openssl rand -hex 5)"
   printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nFPM_PORT=%s\n' "$project" "$password" "$FPM_PORT" > "$DIR/.env"
@@ -353,43 +353,11 @@ services:
 volumes:
   postgres_data:
 YAML
-  cat > "$DIR/config/nginx-external.conf" <<NGINX
-# Include in your host Nginx http context. SSL is managed by you.
-server {
-    listen 80;
-    server_name _;
-    root "$DIR/public";
-    index index.php index.html;
-    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
-    location ~ /\. { deny all; }
-    location ~ \.php$ {
-        try_files \$uri =404;
-        include fastcgi_params;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_pass 127.0.0.1:$FPM_PORT;
-    }
-}
-NGINX
-  cat > "$DIR/config/apache-external.conf" <<APACHE
-# Requires host Apache modules proxy and proxy_fcgi. SSL is managed by you.
-<VirtualHost *:80>
-    ServerName localhost
-    DocumentRoot "$DIR/public"
-    DirectoryIndex index.php index.html
-    ProxyRequests Off
-    <Directory "$DIR/public">
-        Options -Indexes
-        AllowOverride None
-        Require all granted
-        <FilesMatch "^\\.">
-            Require all denied
-        </FilesMatch>
-        <FilesMatch "\\.php$">
-            SetHandler "proxy:fcgi://127.0.0.1:$FPM_PORT"
-        </FilesMatch>
-    </Directory>
-</VirtualHost>
-APACHE
+  templates_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/templates"
+  for web_server in nginx apache; do
+    cp "$templates_dir/$web_server.conf" "$DIR/config/$web_server-external.conf"
+    sed -i "s|@INSTALL_DIR@|$DIR|g; s|@FPM_PORT@|$FPM_PORT|g" "$DIR/config/$web_server-external.conf"
+  done
   cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/command.sh" "$DIR/command.sh"
   chmod 700 "$DIR/command.sh"
   chmod 600 "$DIR/.env" "$DIR/.installer-settings" "$DIR/compose.yaml" "$DIR/config/"*-external.conf
