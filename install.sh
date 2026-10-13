@@ -2,7 +2,7 @@
 # Installer v2 - Bash and Docker Compose. Nginx mode only.
 set -euo pipefail
 
-DIR='/opt/infra-stack'
+DIR='/opt/fluidweb'
 HTTP_PORT=80
 SSL_ENABLED=0
 HTTP_TO_SSL=0
@@ -128,10 +128,10 @@ ask_port() {
 
 ask_dir() {
   header 'INSTALL DIRECTORY'
-  printf '  Installation directory [/opt/infra-stack]: '
+  printf '  Installation directory [/opt/fluidweb]: '
   local value
   IFS= read -r value || return 1
-  DIR=${value:-/opt/infra-stack}
+  DIR=${value:-/opt/fluidweb}
   [[ $DIR == /* && $DIR != / && $DIR != /opt && $DIR != /srv ]] || { message 'Use a full directory path (not /).'; return 1; }
   [[ $DIR != *$'\n'* ]] || return 1
   DIR=${DIR%/}
@@ -245,7 +245,7 @@ write_new_installation() {
   chmod 755 "$DIR/public" "$DIR/certbot" "$DIR/certbot/www"
   local password project
   password=$(openssl rand -hex 24)
-  project="infra_$(openssl rand -hex 5)"
+  project="fluidweb_$(openssl rand -hex 5)"
   printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nHTTP_PORT=%s\n' "$project" "$password" "$HTTP_PORT" > "$DIR/.env"
   printf 'SAVED_HTTP_PORT=%s\nSAVED_SSL=%s\nSAVED_DOMAIN=%s\n' "$HTTP_PORT" "$SSL_ENABLED" "$DOMAIN" > "$DIR/.installer-settings"
   cat > "$DIR/public/index.php" <<'PHP'
@@ -274,7 +274,7 @@ NGINX
   cat > "$DIR/compose.yaml" <<YAML
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: installer
@@ -288,7 +288,7 @@ services:
       timeout: 3s
       retries: 20
   redis:
-    image: redis:8-alpine
+    image: redis:8
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes']
     volumes:
@@ -299,7 +299,7 @@ services:
       timeout: 3s
       retries: 20
   php:
-    image: php:8.4-fpm-alpine
+    image: php:8.4-fpm
     restart: unless-stopped
     volumes:
       - ./public:/var/www/html/public:ro
@@ -309,7 +309,7 @@ services:
       redis:
         condition: service_healthy
   nginx:
-    image: nginx:1.28-alpine
+    image: nginx:stable
     restart: unless-stopped
     ports:
       - '0.0.0.0:\${HTTP_PORT}:80'
