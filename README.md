@@ -34,7 +34,7 @@ The installer checks for root, Ubuntu/Debian, port conflicts, existing files, Do
 
 A minimal `public/index.php` returns `Installer v2: PHP-FPM OK` to verify Nginx → PHP-FPM connectivity. **This is an infrastructure check, not a deployed application.** PostgreSQL and Redis have no public ports. They have persistent bind-mounted data under the installation directory. PHP database/Redis extensions for a future application are not configured yet.
 
-Rerunning the wizard with the **same** directory, port, domain and SSL option preserves passwords and data and starts/verifies the services again. It refuses an unrecognized non-empty installation directory.
+Rerunning the wizard with the **same** directory, port, domain and SSL option preserves passwords and data, repairs the PostgreSQL 18 Alpine bind-mount directory ownership when it is root-owned, and starts/verifies the services again. No recursive ownership changes or data deletion are performed. It refuses an unrecognized non-empty installation directory.
 
 ## Management
 
@@ -49,6 +49,8 @@ sudo /opt/infra-stack/command.sh restart
 ```
 
 Replace `/opt/infra-stack` with your chosen directory.
+
+**SSL checkbox:** highlight "Enable SSL", press **Space** so `[x]` appears, then select **Continue**. The domain prompt appears only when SSL is enabled. Certificate issuance runs **after PostgreSQL, Redis, PHP-FPM and Nginx are healthy**. If the summary shows `SSL: off`, Let's Encrypt will not run.
 
 **SSL renewal is not yet automatic.** Until renewal scheduling is added, periodically run:
 

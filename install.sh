@@ -202,6 +202,22 @@ validate_dir_and_ports() {
 
 dc() { docker compose --project-directory "$DIR" --env-file "$DIR/.env" -f "$DIR/compose.yaml" "$@"; }
 
+# PostgreSQL Alpine uses UID/GID 70. The original installer created a
+# root-owned 0700 bind mount, preventing PostgreSQL 18 from creating PGDATA.
+# Repair only the mount root, never recursively change database files.
+prepare_postgres_storage() {
+  local data_dir="$DIR/data/postgres"
+  [[ -d $data_dir && ! -L $data_dir ]] || fail 'PostgreSQL data directory is missing or invalid.'
+  local owner
+  owner=$(stat -c %u "$data_dir")
+  if [[ $owner == 0 ]]; then
+    chown 70:70 "$data_dir" || fail 'Cannot set PostgreSQL directory ownership.'
+  elif [[ $owner != 70 ]]; then
+    fail "PostgreSQL data directory has unexpected owner UID $owner; not changing existing data."
+  fi
+  chmod 700 "$data_dir" || fail 'Cannot set PostgreSQL directory permissions.'
+}
+
 write_new_installation() {
   umask 077
   mkdir -p "$DIR"/{config,public,data/postgres,data/redis,certbot/conf,certbot/www}
@@ -338,6 +354,7 @@ run_installation() {
   validate_dir_and_ports
   ensure_docker
   if [[ ! -f "$DIR/.installer-settings" ]]; then write_new_installation; fi
+  prepare_postgres_storage
   message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
   dc up -d
   if (( SSL_ENABLED )) && [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]]; then
