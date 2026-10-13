@@ -34,7 +34,7 @@ The installer checks for root, Ubuntu/Debian, port conflicts, existing files, Do
 
 A minimal `public/index.php` returns `Installer v2: PHP-FPM OK` to verify Nginx → PHP-FPM connectivity. **This is an infrastructure check, not a deployed application.** PostgreSQL and Redis have no public ports. They have persistent bind-mounted data under the installation directory. PHP database/Redis extensions for a future application are not configured yet.
 
-Rerunning the wizard with the **same** directory, port, domain and SSL option preserves passwords and data, repairs the PostgreSQL 18 Alpine bind-mount directory ownership when it is root-owned, and starts/verifies the services again. No recursive ownership changes or data deletion are performed. It refuses an unrecognized non-empty installation directory.
+Rerunning the wizard with the **same** directory, port, domain and SSL option preserves passwords and data, repairs the PostgreSQL 18 Alpine bind-mount directory ownership when it is root-owned, and starts/verifies the services again. No recursive ownership changes or data deletion are performed. It refuses an unrecognized non-empty installation directory. To add SSL to an existing HTTP installation on **public port 80**, rerun the wizard, check SSL and enter the same installation directory; it preserves the database and credentials. SSL activation is tested with a simulated Docker backend; a real Let's Encrypt issuance is still to be tested on a VPS.
 
 ## Management
 

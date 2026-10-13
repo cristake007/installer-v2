@@ -5,6 +5,7 @@ set -euo pipefail
 DIR='/opt/infra-stack'
 HTTP_PORT=80
 SSL_ENABLED=0
+HTTP_TO_SSL=0
 DOMAIN=''
 MENU_CHOICE=0
 TTY=0
@@ -184,13 +185,22 @@ validate_dir_and_ports() {
   if [[ -e "$DIR" && ! -d "$DIR" ]]; then fail "$DIR exists but is not a directory."; fi
   if [[ -L "$DIR" ]]; then fail 'Installation path must not be a symlink.'; fi
   if [[ -f "$DIR/.installer-settings" ]]; then
-    # Compare literal settings; never execute configuration content as root.
-    grep -Fxq "SAVED_HTTP_PORT=$HTTP_PORT" "$DIR/.installer-settings" &&
-    grep -Fxq "SAVED_SSL=$SSL_ENABLED" "$DIR/.installer-settings" &&
-    grep -Fxq "SAVED_DOMAIN=$DOMAIN" "$DIR/.installer-settings" ||
-      fail 'Existing installation uses different options. Choose its original port/SSL/domain; no settings were changed.'
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
-    message 'Existing installation found. Services will be verified without replacing data or passwords.'
+    # Compare literal settings; never execute configuration content as root.
+    if grep -Fxq "SAVED_HTTP_PORT=$HTTP_PORT" "$DIR/.installer-settings" &&
+       grep -Fxq "SAVED_SSL=$SSL_ENABLED" "$DIR/.installer-settings" &&
+       grep -Fxq "SAVED_DOMAIN=$DOMAIN" "$DIR/.installer-settings"; then
+      message 'Existing installation found. Services will be verified without replacing data or passwords.'
+    elif (( SSL_ENABLED )) && (( HTTP_PORT == 80 )) &&
+         grep -Fxq 'SAVED_HTTP_PORT=80' "$DIR/.installer-settings" &&
+         grep -Fxq 'SAVED_SSL=0' "$DIR/.installer-settings" &&
+         grep -Fxq 'SAVED_DOMAIN=' "$DIR/.installer-settings"; then
+      port_busy 443 && fail 'Public HTTPS port 443 is already in use.'
+      HTTP_TO_SSL=1
+      message 'Existing HTTP installation found. SSL will be enabled without replacing data or passwords.'
+    else
+      fail 'Existing installation uses different options. Data and settings were not changed.'
+    fi
   else
     if [[ -d "$DIR" && -n $(find "$DIR" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
       fail "$DIR is not empty and is not an installer-v2 installation."
@@ -198,6 +208,18 @@ validate_dir_and_ports() {
     if port_busy "$HTTP_PORT"; then fail "Public port $HTTP_PORT is already in use. Pick another port (SSL requires port 80)."; fi
     if (( SSL_ENABLED )) && port_busy 443; then fail 'Public HTTPS port 443 is already in use.'; fi
   fi
+}
+
+# Enable HTTPS for an existing HTTP installation on public port 80.
+# Update only the Nginx port line and stored options. Keep all data and secrets.
+enable_ssl_on_existing_http() {
+  local port_line="      - '0.0.0.0:\${HTTP_PORT}:80'"
+  grep -Fxq "$port_line" "$DIR/compose.yaml" || fail 'Unexpected Nginx port configuration; no changes made.'
+  grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml" && fail 'HTTPS port already configured unexpectedly.'
+  sed -i "/HTTP_PORT}:80'$/a\      - '0.0.0.0:443:443'" "$DIR/compose.yaml"
+  grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml" || fail 'Could not enable the HTTPS port.'
+  printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=1\nSAVED_DOMAIN=%s\n' "$DOMAIN" > "$DIR/.installer-settings"
+  chmod 600 "$DIR/.installer-settings"
 }
 
 dc() { docker compose --project-directory "$DIR" --env-file "$DIR/.env" -f "$DIR/compose.yaml" "$@"; }
@@ -354,6 +376,7 @@ run_installation() {
   validate_dir_and_ports
   ensure_docker
   if [[ ! -f "$DIR/.installer-settings" ]]; then write_new_installation; fi
+  if (( HTTP_TO_SSL )); then enable_ssl_on_existing_http; fi
   prepare_postgres_storage
   message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
   dc up -d
