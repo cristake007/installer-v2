@@ -104,7 +104,7 @@ nginx_options() {
 }
 
 ask_domain() {
-  local error=''
+  local error=${1:-''}
   while :; do
     header 'SSL DOMAIN'
     [[ -z $error ]] || printf '  ERROR: %s\n\n' "$error"
@@ -179,22 +179,35 @@ ensure_docker() {
 port_busy() { [[ -n $(ss -H -ltn "sport = :$1") ]]; }
 
 validate_dir_and_ports() {
+  local saved_domain
   HTTP_TO_SSL=0
   if [[ -e "$DIR" && ! -d "$DIR" ]]; then fail "$DIR exists but is not a directory."; fi
   if [[ -L "$DIR" ]]; then fail 'Installation path must not be a symlink.'; fi
   if [[ -f "$DIR/.installer-settings" ]]; then
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
     ensure_postgres_volume
+    saved_domain=$(sed -n 's/^SAVED_DOMAIN=//p' "$DIR/.installer-settings")
     # Compare literal settings; never execute configuration content as root.
     if grep -Fxq "SAVED_HTTP_PORT=$HTTP_PORT" "$DIR/.installer-settings" &&
        grep -Fxq "SAVED_SSL=$SSL_ENABLED" "$DIR/.installer-settings" &&
        grep -Fxq "SAVED_DOMAIN=$DOMAIN" "$DIR/.installer-settings"; then
       message 'Existing installation found. Services will be verified without replacing data or passwords.'
+      if (( SSL_ENABLED )) && [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]] &&
+         [[ -f "$DIR/config/nginx.conf" ]] &&
+         ! grep -Eq '^[[:space:]]*ssl_certificate[[:space:]]' "$DIR/config/nginx.conf"; then
+        HTTP_TO_SSL=1
+      fi
     elif (( SSL_ENABLED )) && (( HTTP_PORT == 80 )) &&
          grep -Fxq 'SAVED_HTTP_PORT=80' "$DIR/.installer-settings" &&
-         grep -Fxq 'SAVED_SSL=0' "$DIR/.installer-settings" &&
-         grep -Fxq 'SAVED_DOMAIN=' "$DIR/.installer-settings"; then
-      port_busy 443 && fail 'Public HTTPS port 443 is already in use.'
+         { { grep -Fxq 'SAVED_SSL=0' "$DIR/.installer-settings" &&
+             grep -Fxq 'SAVED_DOMAIN=' "$DIR/.installer-settings"; } ||
+           { grep -Fxq 'SAVED_SSL=1' "$DIR/.installer-settings" &&
+             [[ ! -f "$DIR/certbot/conf/live/$saved_domain/fullchain.pem" ]] &&
+             [[ -f "$DIR/config/nginx.conf" ]] &&
+             ! grep -Eq '^[[:space:]]*ssl_certificate[[:space:]]' "$DIR/config/nginx.conf"; }; }; then
+      if ! grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml"; then
+        port_busy 443 && fail 'Public HTTPS port 443 is already in use.'
+      fi
       HTTP_TO_SSL=1
       message 'Existing HTTP installation found. SSL will be enabled without replacing data or passwords.'
     else
@@ -210,15 +223,13 @@ validate_dir_and_ports() {
 }
 
 # Enable HTTPS for an existing HTTP installation on public port 80.
-# Update only the Nginx port line and stored options. Keep all data and secrets.
+# Update only the Nginx port line. Keep all data and secrets.
 enable_ssl_on_existing_http() {
   local port_line="      - '0.0.0.0:\${HTTP_PORT}:80'"
   grep -Fxq "$port_line" "$DIR/compose.yaml" || fail 'Unexpected Nginx port configuration; no changes made.'
-  grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml" && fail 'HTTPS port already configured unexpectedly.'
+  grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml" && return 0
   sed -i "/HTTP_PORT}:80'$/a\      - '0.0.0.0:443:443'" "$DIR/compose.yaml"
   grep -Fxq "      - '0.0.0.0:443:443'" "$DIR/compose.yaml" || fail 'Could not enable the HTTPS port.'
-  printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=1\nSAVED_DOMAIN=%s\n' "$DOMAIN" > "$DIR/.installer-settings"
-  chmod 600 "$DIR/.installer-settings"
 }
 
 dc() { docker compose --project-directory "$DIR" --env-file "$DIR/.env" -f "$DIR/compose.yaml" "$@"; }
@@ -239,7 +250,7 @@ write_new_installation() {
   password=$(openssl rand -hex 24)
   project="fluidweb_$(openssl rand -hex 5)"
   printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nHTTP_PORT=%s\n' "$project" "$password" "$HTTP_PORT" > "$DIR/.env"
-  printf 'SAVED_HTTP_PORT=%s\nSAVED_SSL=%s\nSAVED_DOMAIN=%s\n' "$HTTP_PORT" "$SSL_ENABLED" "$DOMAIN" > "$DIR/.installer-settings"
+  printf 'SAVED_HTTP_PORT=%s\nSAVED_SSL=0\nSAVED_DOMAIN=\n' "$HTTP_PORT" > "$DIR/.installer-settings"
   cat > "$DIR/public/index.php" <<'PHP'
 <?php
 header('Content-Type: text/plain; charset=utf-8');
@@ -261,8 +272,6 @@ server {
     }
 }
 NGINX
-  local https_port=''
-  (( SSL_ENABLED )) && https_port="      - '0.0.0.0:443:443'"
   cat > "$DIR/compose.yaml" <<YAML
 services:
   postgres:
@@ -305,7 +314,6 @@ services:
     restart: unless-stopped
     ports:
       - '0.0.0.0:\${HTTP_PORT}:80'
-$https_port
     volumes:
       - ./public:/var/www/html/public:ro
       - ./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -368,18 +376,36 @@ run_installation() {
   preflight
   validate_dir_and_ports
   ensure_docker
-  if [[ ! -f "$DIR/.installer-settings" ]]; then write_new_installation; fi
-  if (( HTTP_TO_SSL )); then enable_ssl_on_existing_http; fi
+  if [[ ! -f "$DIR/.installer-settings" ]]; then
+    write_new_installation
+    HTTP_TO_SSL=$SSL_ENABLED
+  fi
+  if (( HTTP_TO_SSL )); then
+    printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=0\nSAVED_DOMAIN=\n' > "$DIR/.installer-settings"
+    chmod 600 "$DIR/.installer-settings"
+  fi
   message 'Starting PostgreSQL, Redis, PHP-FPM and public Nginx...'
   dc up -d
-  if (( SSL_ENABLED )) && [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]]; then
+  if (( SSL_ENABLED )) && (( HTTP_TO_SSL )); then
     wait_http "http://127.0.0.1:$HTTP_PORT/" 'Installer v2: PHP-FPM OK' || fail 'Nginx/PHP-FPM did not become ready. Check Docker logs.'
-    message "Requesting Let's Encrypt certificate for $DOMAIN (public ports 80/443)..."
-    dc run --rm certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
-      --webroot -w /var/www/certbot -d "$DOMAIN" || fail 'Certificate issuance failed; HTTP stack remains running. Check DNS and inbound port 80, then rerun.'
+    while [[ ! -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ||
+             ! -f "$DIR/certbot/conf/live/$DOMAIN/privkey.pem" ]]; do
+      message "Requesting Let's Encrypt certificate for $DOMAIN (public port 80)..."
+      if dc run --rm certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
+          --webroot -w /var/www/certbot -d "$DOMAIN" &&
+         [[ -f "$DIR/certbot/conf/live/$DOMAIN/fullchain.pem" &&
+            -f "$DIR/certbot/conf/live/$DOMAIN/privkey.pem" ]]; then
+        break
+      fi
+      ask_domain 'Certificate issuance failed; HTTP remains running. Check DNS and inbound port 80, then retry or go back.' || return 0
+    done
   fi
   if (( SSL_ENABLED )); then
-    https_config
+    if (( HTTP_TO_SSL )); then
+      enable_ssl_on_existing_http
+      https_config
+      dc up -d --no-deps nginx
+    fi
     dc exec -T nginx nginx -t || fail 'Nginx HTTPS config validation failed.'
     dc exec -T nginx nginx -s reload || fail 'Nginx reload failed.'
     local i body
@@ -389,6 +415,8 @@ run_installation() {
       sleep 2
     done
     [[ $body == *'Installer v2: PHP-FPM OK'* ]] || fail 'HTTPS check failed. Inspect Nginx logs and certificate.'
+    printf 'SAVED_HTTP_PORT=80\nSAVED_SSL=1\nSAVED_DOMAIN=%s\n' "$DOMAIN" > "$DIR/.installer-settings"
+    chmod 600 "$DIR/.installer-settings"
   else
     wait_http "http://127.0.0.1:$HTTP_PORT/" 'Installer v2: PHP-FPM OK' || fail 'HTTP check failed. Inspect Nginx/PHP-FPM logs.'
   fi
