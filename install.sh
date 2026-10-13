@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Installer v2 - Bash and Docker Compose. Nginx mode only.
+# Installer v2 - Bash and Docker Compose.
 set -euo pipefail
 
 DIR='/opt/fluidweb'
+INSTALL_MODE=nginx
+FPM_PORT=9000
 HTTP_PORT=80
 SSL_ENABLED=0
 HTTP_TO_SSL=0
@@ -135,6 +137,12 @@ ask_dir() {
 }
 
 confirm() {
+  if [[ $INSTALL_MODE == external ]]; then
+    menu 'CONFIRM INSTALLATION' "Location: $DIR | PHP-FPM: 127.0.0.1:$FPM_PORT | Web server and SSL: managed by you" \
+      'Install / verify services' 'Back' || return 1
+    (( MENU_CHOICE==0 ))
+    return
+  fi
   if menu 'CONFIRM INSTALLATION' "Location: $DIR | Nginx: public 0.0.0.0:$HTTP_PORT | SSL: $([[ $SSL_ENABLED == 1 ]] && printf '%s' "$DOMAIN (public 443)" || printf 'off')" \
       'Install / verify services' 'Back'; then
     (( MENU_CHOICE==0 ))
@@ -184,6 +192,7 @@ validate_dir_and_ports() {
   if [[ -e "$DIR" && ! -d "$DIR" ]]; then fail "$DIR exists but is not a directory."; fi
   if [[ -L "$DIR" ]]; then fail 'Installation path must not be a symlink.'; fi
   if [[ -f "$DIR/.installer-settings" ]]; then
+    grep -Fxq 'SAVED_MODE=external' "$DIR/.installer-settings" && fail 'This directory contains an external web server installation. Installation modes cannot be converted automatically.'
     [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
     ensure_postgres_volume
     saved_domain=$(sed -n 's/^SAVED_DOMAIN=//p' "$DIR/.installer-settings")
@@ -220,6 +229,170 @@ validate_dir_and_ports() {
     if port_busy "$HTTP_PORT"; then fail "Public port $HTTP_PORT is already in use. Free it before installing."; fi
     if (( SSL_ENABLED )) && port_busy 443; then fail 'Public HTTPS port 443 is already in use.'; fi
   fi
+}
+
+ask_fpm_port() {
+  local value error=''
+  while :; do
+    header 'LOCAL PHP-FPM PORT'
+    [[ -z $error ]] || printf '  ERROR: %s\n\n' "$error"
+    printf '  PHP-FPM on 127.0.0.1 [9000, q=back]: '
+    IFS= read -r value || return 1
+    case "$value" in q|Q|$'\033') return 1;; esac
+    value=${value:-9000}
+    if [[ ! $value =~ ^[0-9]{1,5}$ ]] || (( 10#$value < 1 || 10#$value > 65535 )); then
+      error='Enter a port between 1 and 65535.'
+    elif port_busy "$((10#$value))" &&
+         ! { [[ -f "$DIR/.installer-settings" ]] &&
+             grep -Fxq 'SAVED_MODE=external' "$DIR/.installer-settings" &&
+             grep -Fxq "SAVED_FPM_PORT=$((10#$value))" "$DIR/.installer-settings"; }; then
+      error="Local port $((10#$value)) is already in use. Choose another port."
+    else
+      FPM_PORT=$((10#$value))
+      return 0
+    fi
+  done
+}
+
+run_external_installation() {
+  local SSL_ENABLED=0 parent permissions
+  preflight
+  [[ $DIR =~ ^/[a-zA-Z0-9_./\ -]+$ ]] || fail 'External mode requires a directory path using letters, numbers, spaces, dots, slashes, hyphens or underscores.'
+  [[ ! -L $DIR ]] || fail 'Installation path must not be a symlink.'
+  [[ ! -e $DIR || -d $DIR ]] || fail "$DIR exists but is not a directory."
+  parent=${DIR%/*}
+  while [[ -n $parent && $parent != / ]]; do
+    if [[ -d $parent ]]; then
+      permissions=$(stat -Lc '%a' "$parent")
+      (( (8#$permissions & 1) != 0 )) || fail "Parent directory $parent must permit traversal by the host web server (others execute permission)."
+    fi
+    parent=${parent%/*}
+  done
+  if [[ -f "$DIR/.installer-settings" ]]; then
+    grep -Fxq 'SAVED_MODE=external' "$DIR/.installer-settings" || fail 'This directory contains a Nginx-in-Docker installation. Installation modes cannot be converted automatically.'
+    [[ -f "$DIR/compose.yaml" && -f "$DIR/.env" ]] || fail 'Existing installation is incomplete. No files were overwritten.'
+    grep -Fxq "SAVED_FPM_PORT=$FPM_PORT" "$DIR/.installer-settings" || fail 'Existing installation uses a different PHP-FPM port. Data and settings were not changed.'
+    message 'Existing external installation found. Data, passwords and examples will be preserved.'
+  else
+    [[ ! -d $DIR || -z $(find "$DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || fail "$DIR is not empty and is not an installer-v2 installation."
+    port_busy "$FPM_PORT" && fail "Local port $FPM_PORT is already in use. Rerun and choose another port."
+  fi
+  ensure_docker
+  if [[ ! -f "$DIR/.installer-settings" ]]; then write_external_installation; fi
+  dc config -q
+  dc up -d --wait --wait-timeout 120
+  dc exec -T postgres pg_isready -U installer -d installer >/dev/null || fail 'PostgreSQL did not pass the readiness check.'
+  [[ $(dc exec -T redis redis-cli ping | tr -d '\r') == PONG ]] || fail 'Redis did not respond to PING.'
+  printf '\n  External infrastructure verified.\n  PHP-FPM: 127.0.0.1:%s\n' "$FPM_PORT"
+  printf '  Public files: %s/public\n  Examples: %s/config/nginx-external.conf and apache-external.conf\n' "$DIR" "$DIR"
+  message 'Configure your host web server and SSL independently. No host web server was installed or changed.'
+}
+
+write_external_installation() {
+  umask 077
+  mkdir -p "$DIR"/{config,public,data/redis}
+  chmod 751 "$DIR"
+  chmod 700 "$DIR/config" "$DIR/data"
+  chmod 755 "$DIR/public"
+  local password project
+  password=$(openssl rand -hex 24)
+  project="fluidweb_$(openssl rand -hex 5)"
+  printf 'COMPOSE_PROJECT_NAME=%s\nPOSTGRES_PASSWORD=%s\nFPM_PORT=%s\n' "$project" "$password" "$FPM_PORT" > "$DIR/.env"
+  printf 'SAVED_MODE=external\nSAVED_FPM_PORT=%s\nSAVED_SSL=0\nSAVED_DOMAIN=\n' "$FPM_PORT" > "$DIR/.installer-settings"
+  cat > "$DIR/public/index.php" <<'PHP'
+<?php
+header('Content-Type: text/plain; charset=utf-8');
+echo "Installer v2: PHP-FPM OK\n";
+PHP
+  chmod 644 "$DIR/public/index.php"
+  cat > "$DIR/compose.yaml" <<YAML
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: installer
+      POSTGRES_DB: installer
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U installer -d installer']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:8
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  php:
+    image: php:8.4-fpm
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:\${FPM_PORT}:9000'
+    volumes:
+      - '$DIR/public:$DIR/public:ro'
+    healthcheck:
+      test: ['CMD', 'php', '-r', 'exit(@fsockopen("127.0.0.1", 9000) ? 0 : 1);']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+YAML
+  cat > "$DIR/config/nginx-external.conf" <<NGINX
+# Include in your host Nginx http context. SSL is managed by you.
+server {
+    listen 80;
+    server_name _;
+    root "$DIR/public";
+    index index.php index.html;
+    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    location ~ /\. { deny all; }
+    location ~ \.php$ {
+        try_files \$uri =404;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_pass 127.0.0.1:$FPM_PORT;
+    }
+}
+NGINX
+  cat > "$DIR/config/apache-external.conf" <<APACHE
+# Requires host Apache modules proxy and proxy_fcgi. SSL is managed by you.
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot "$DIR/public"
+    DirectoryIndex index.php index.html
+    ProxyRequests Off
+    <Directory "$DIR/public">
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+        <FilesMatch "^\\.">
+            Require all denied
+        </FilesMatch>
+        <FilesMatch "\\.php$">
+            SetHandler "proxy:fcgi://127.0.0.1:$FPM_PORT"
+        </FilesMatch>
+    </Directory>
+</VirtualHost>
+APACHE
+  cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/command.sh" "$DIR/command.sh"
+  chmod 700 "$DIR/command.sh"
+  chmod 600 "$DIR/.env" "$DIR/.installer-settings" "$DIR/compose.yaml" "$DIR/config/"*-external.conf
 }
 
 # Enable HTTPS for an existing HTTP installation on public port 80.
@@ -439,9 +612,15 @@ main() {
     case "$MENU_CHOICE" in
       0)
         if ! menu 'WEB SERVER' 'Choose how requests reach PHP-FPM:' \
-          'Nginx in Docker' 'External web server (coming later)'; then continue; fi
+          'Nginx in Docker' 'External web server'; then continue; fi
+        INSTALL_MODE=nginx
         if (( MENU_CHOICE==1 )); then
-          header 'EXTERNAL SERVER'; message 'This option will be implemented after Nginx mode.'; continue
+          INSTALL_MODE=external
+          ask_dir || continue
+          ask_fpm_port || continue
+          confirm || continue
+          run_external_installation
+          break
         fi
         nginx_options || continue
         HTTP_PORT=80
